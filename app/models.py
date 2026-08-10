@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -22,6 +22,7 @@ class User(Base):
 
     summary_length: Mapped[str | None] = mapped_column(String(16), nullable=True)
     summary_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ai_provider: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     summaries: Mapped[list["Summary"]] = relationship(back_populates="user")
     api_tokens: Mapped[list["ApiToken"]] = relationship(back_populates="user")
@@ -62,5 +63,19 @@ class Summary(Base):
     subscriber_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chapters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="summaries")
+
+
+class PasswordResetCode(Base):
+    __tablename__ = "password_reset_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

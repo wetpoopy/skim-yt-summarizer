@@ -17,7 +17,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiToken, Summary, User
+from app.models import ApiToken, PasswordResetCode, Summary, User
+from app.password_reset import EmailSendError, send_reset_code
+from app.ratelimit import check_and_record
+
+RESET_CODE_TTL_MINUTES = 15
+RESET_REQUEST_LIMIT_PER_DAY = 5
 
 TOKEN_PREFIX = "skim_"
 
@@ -82,11 +87,32 @@ class TokenOut(BaseModel):
 class PreferencesOut(BaseModel):
     summary_length: Literal["brief", "standard", "detailed"]
     summary_format: Literal["bullets", "prose", "mixed"]
+    ai_provider: Literal["anthropic", "openai", "gemini"]
 
 
 class PreferencesUpdate(BaseModel):
     summary_length: Literal["brief", "standard", "detailed"]
     summary_format: Literal["bullets", "prose", "mixed"]
+    ai_provider: Literal["anthropic", "openai", "gemini"]
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password is too long.")
+        return v
 
 
 def _hash_password(password: str) -> str:
@@ -253,6 +279,7 @@ def get_preferences(user: User = Depends(require_user)):
     return PreferencesOut(
         summary_length=user.summary_length or "standard",
         summary_format=user.summary_format or "mixed",
+        ai_provider=user.ai_provider or "anthropic",
     )
 
 
@@ -262,5 +289,73 @@ def update_preferences(
 ):
     user.summary_length = body.summary_length
     user.summary_format = body.summary_format
+    user.ai_provider = body.ai_provider
     db.commit()
-    return PreferencesOut(summary_length=user.summary_length, summary_format=user.summary_format)
+    return PreferencesOut(
+        summary_length=user.summary_length,
+        summary_format=user.summary_format,
+        ai_provider=user.ai_provider,
+    )
+
+
+def _hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+@router.post("/forgot-password")
+def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    generic_response = {
+        "message": "If that email has an account, we've sent a password reset code."
+    }
+
+    allowed, _ = check_and_record(f"reset:{body.email}", RESET_REQUEST_LIMIT_PER_DAY)
+    if not allowed:
+        # Still generic — don't reveal whether the email exists via a different error.
+        return generic_response
+
+    user = db.scalar(select(User).where(User.email == body.email))
+    if not user:
+        return generic_response
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    reset_row = PasswordResetCode(
+        user_id=user.id,
+        code_hash=_hash_code(code),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=RESET_CODE_TTL_MINUTES),
+    )
+    db.add(reset_row)
+    db.commit()
+
+    try:
+        send_reset_code(user.email, code)
+    except EmailSendError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return generic_response
+
+
+@router.post("/reset-password")
+def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email == body.email))
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    code_hash = _hash_code(body.code)
+    now = datetime.now(timezone.utc)
+    reset_row = db.scalar(
+        select(PasswordResetCode)
+        .where(
+            PasswordResetCode.user_id == user.id,
+            PasswordResetCode.code_hash == code_hash,
+            PasswordResetCode.used == False,  # noqa: E712
+            PasswordResetCode.expires_at > now,
+        )
+        .order_by(PasswordResetCode.created_at.desc())
+    )
+    if not reset_row:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+
+    user.password_hash = _hash_password(body.new_password)
+    reset_row.used = True
+    db.commit()
+    return {"ok": True}

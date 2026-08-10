@@ -68,6 +68,11 @@ class SummarizeRequest(BaseModel):
         return v
 
 
+class Chapter(BaseModel):
+    label: str
+    seconds: int
+
+
 class SummarizeResponse(BaseModel):
     video_id: str
     summary: str
@@ -85,6 +90,8 @@ class SummarizeResponse(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    title_answer: str | None = None
+    chapters: list[Chapter] = []
 
 
 class HistoryItem(BaseModel):
@@ -105,6 +112,13 @@ class HistoryItem(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    title_answer: str | None = None
+    chapters: list[Chapter] = []
+    status: str = "unread"
+
+
+class StatusUpdate(BaseModel):
+    status: Literal["unread", "read", "archived"]
 
 
 @app.get("/health")
@@ -146,6 +160,7 @@ def summarize_video(
 
     length = (user.summary_length if user else None) or "standard"
     fmt = (user.summary_format if user else None) or "mixed"
+    provider = (user.ai_provider if user else None) or "anthropic"
 
     metadata = get_video_metadata(transcript_data["video_id"]) or {}
     comments = get_top_comments(transcript_data["video_id"])
@@ -155,10 +170,19 @@ def summarize_video(
 
     try:
         result = summarize(
-            transcript_data["text"], client=client, length=length, format=fmt, comments=comments
+            transcript_data["text"],
+            client=client,
+            length=length,
+            format=fmt,
+            comments=comments,
+            title=metadata.get("title"),
+            description=metadata.get("description"),
+            provider=provider,
         )
     except SummarizerError as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+    chapters = result.get("chapters") or []
 
     saved = False
     if user is not None:
@@ -179,6 +203,9 @@ def summarize_video(
             subscriber_count=subscriber_count,
             sentiment_label=result.get("sentiment_label"),
             sentiment_blurb=result.get("sentiment_blurb"),
+            title_answer=result.get("answer"),
+            chapters_json=json.dumps(chapters) if chapters else None,
+            status="unread",
         )
         db.add(row)
         db.commit()
@@ -201,6 +228,34 @@ def summarize_video(
         subscriber_count=subscriber_count,
         sentiment_label=result.get("sentiment_label"),
         sentiment_blurb=result.get("sentiment_blurb"),
+        title_answer=result.get("answer"),
+        chapters=chapters,
+    )
+
+
+def _row_to_history_item(r: Summary) -> HistoryItem:
+    chapters = json.loads(r.chapters_json) if r.chapters_json else []
+    return HistoryItem(
+        id=r.id,
+        video_id=r.video_id,
+        url=r.url,
+        summary=r.summary_text,
+        category=r.category,
+        language=r.language,
+        created_at=r.created_at,
+        title=r.title,
+        channel=r.channel,
+        channel_id=r.channel_id,
+        view_count=r.view_count,
+        comment_count=r.comment_count,
+        like_count=r.like_count,
+        duration_seconds=r.duration_seconds,
+        subscriber_count=r.subscriber_count,
+        sentiment_label=r.sentiment_label,
+        sentiment_blurb=r.sentiment_blurb,
+        title_answer=r.title_answer,
+        chapters=chapters,
+        status=r.status or "unread",
     )
 
 
@@ -208,10 +263,18 @@ def summarize_video(
 def get_history(
     date_filter: date | None = Query(default=None, alias="date"),
     category: str | None = None,
+    status: Literal["unread", "read", "archived"] = "unread",
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    query = select(Summary).where(Summary.user_id == user.id)
+    if status == "unread":
+        query = select(Summary).where(
+            Summary.user_id == user.id,
+            (Summary.status == "unread") | (Summary.status.is_(None)),
+        )
+    else:
+        query = select(Summary).where(Summary.user_id == user.id, Summary.status == status)
+
     if date_filter is not None:
         day_start = datetime.combine(date_filter, time.min, tzinfo=timezone.utc)
         day_end = datetime.combine(date_filter, time.max, tzinfo=timezone.utc)
@@ -221,28 +284,34 @@ def get_history(
     query = query.order_by(Summary.created_at.desc())
 
     rows = db.scalars(query).all()
-    return [
-        HistoryItem(
-            id=r.id,
-            video_id=r.video_id,
-            url=r.url,
-            summary=r.summary_text,
-            category=r.category,
-            language=r.language,
-            created_at=r.created_at,
-            title=r.title,
-            channel=r.channel,
-            channel_id=r.channel_id,
-            view_count=r.view_count,
-            comment_count=r.comment_count,
-            like_count=r.like_count,
-            duration_seconds=r.duration_seconds,
-            subscriber_count=r.subscriber_count,
-            sentiment_label=r.sentiment_label,
-            sentiment_blurb=r.sentiment_blurb,
-        )
-        for r in rows
-    ]
+    return [_row_to_history_item(r) for r in rows]
+
+
+@app.patch("/history/{summary_id}", response_model=HistoryItem)
+def update_history_status(
+    summary_id: int,
+    body: StatusUpdate,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    row = db.scalar(select(Summary).where(Summary.id == summary_id, Summary.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+    row.status = body.status
+    db.commit()
+    return _row_to_history_item(row)
+
+
+@app.delete("/history/{summary_id}")
+def delete_one_history_item(
+    summary_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)
+):
+    row = db.scalar(select(Summary).where(Summary.id == summary_id, Summary.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/history/categories", response_model=list[str])
@@ -281,6 +350,9 @@ def export_history(
                     "duration_seconds": r.duration_seconds,
                     "sentiment_label": r.sentiment_label,
                     "sentiment_blurb": r.sentiment_blurb,
+                    "title_answer": r.title_answer,
+                    "chapters": json.loads(r.chapters_json) if r.chapters_json else [],
+                    "status": r.status or "unread",
                     "summary": r.summary_text,
                     "created_at": r.created_at.isoformat(),
                 }
@@ -296,17 +368,18 @@ def export_history(
         writer = csv.writer(buf)
         writer.writerow(
             [
-                "created_at", "video_id", "title", "channel", "subscriber_count", "category", "language",
-                "view_count", "like_count", "comment_count", "duration_seconds",
-                "sentiment_label", "sentiment_blurb", "url", "summary",
+                "created_at", "video_id", "title", "title_answer", "channel", "subscriber_count",
+                "category", "language", "view_count", "like_count", "comment_count", "duration_seconds",
+                "sentiment_label", "sentiment_blurb", "status", "url", "summary",
             ]
         )
         for r in rows:
             writer.writerow(
                 [
-                    r.created_at.isoformat(), r.video_id, r.title, r.channel, r.subscriber_count,
-                    r.category, r.language, r.view_count, r.like_count, r.comment_count,
-                    r.duration_seconds, r.sentiment_label, r.sentiment_blurb, r.url, r.summary_text,
+                    r.created_at.isoformat(), r.video_id, r.title, r.title_answer, r.channel,
+                    r.subscriber_count, r.category, r.language, r.view_count, r.like_count,
+                    r.comment_count, r.duration_seconds, r.sentiment_label, r.sentiment_blurb,
+                    r.status or "unread", r.url, r.summary_text,
                 ]
             )
         content = buf.getvalue()
@@ -325,7 +398,16 @@ def export_history(
             heading = r.title or r.video_id
             lines.append(f"**{heading}** · {r.channel or 'Unknown channel'} · {r.category} · [{r.url}]({r.url})")
             lines.append("")
+            if r.title_answer:
+                lines.append(f"> {r.title_answer}")
+                lines.append("")
             lines.append(r.summary_text)
+            if r.chapters_json:
+                lines.append("")
+                lines.append("**Chapters:**")
+                for chapter in json.loads(r.chapters_json):
+                    seconds = chapter["seconds"]
+                    lines.append(f"- [{chapter['label']}]({r.url}&t={seconds}s)")
             if r.sentiment_label:
                 lines.append("")
                 lines.append(f"**Comment sentiment:** {r.sentiment_label} — {r.sentiment_blurb or ''}")

@@ -141,6 +141,33 @@
     margin: 0;
   }
 
+  .history-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .history-tab {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .history-tab:hover { background: var(--line); color: var(--paper); }
+
+  .history-tab.active {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
   .history-filters {
     display: flex;
     gap: 10px;
@@ -219,6 +246,78 @@
   }
 
   .history-card-toggle:hover { background: #FFC04D; }
+
+  .history-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .history-card-action-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .history-card-action-btn:hover { background: var(--line); color: var(--paper); }
+
+  .history-card-action-btn.danger {
+    border-color: rgba(229, 72, 77, 0.4);
+    color: var(--danger);
+  }
+
+  .history-card-action-btn.danger:hover { background: rgba(229, 72, 77, 0.1); }
+
+  .title-answer {
+    background: rgba(255, 176, 32, 0.06);
+    border-left: 2px solid var(--amber);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    margin: 4px 0 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--paper);
+  }
+
+  .title-answer:empty { display: none; }
+
+  .chapters-list {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  .chapters-heading {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .chapter-link {
+    display: flex;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--paper);
+    text-decoration: none;
+    padding: 4px 0;
+  }
+
+  .chapter-link:hover .chapter-time { color: var(--amber); text-decoration: underline; }
+
+  .chapter-time {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--slate);
+    flex-shrink: 0;
+  }
 
   .history-card-submeta {
     font-size: 11px;
@@ -923,6 +1022,7 @@
       <div class="result-card">
         <div class="result-title" id="resultTitle"></div>
         <div class="result-submeta mono" id="resultSubmeta"></div>
+        <div class="title-answer" id="titleAnswer"></div>
         <div class="result-meta">
           <span class="video-id mono" id="videoId"></span>
           <span class="category-pill mono" id="categoryPill"></span>
@@ -930,6 +1030,7 @@
           <button class="copy-btn mono" id="copyBtn">COPY</button>
         </div>
         <div class="summary-text" id="summaryText"></div>
+        <div id="chaptersContainer"></div>
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
       </div>
     </div>
@@ -939,6 +1040,12 @@
     <div class="history-header">
       <button class="link-btn mono" id="backToMainBtn">← SUMMARIZE</button>
       <h2>Your history</h2>
+    </div>
+
+    <div class="history-tabs">
+      <button class="history-tab mono active" data-status="unread" id="tabUnread">UNREAD</button>
+      <button class="history-tab mono" data-status="read" id="tabRead">READ</button>
+      <button class="history-tab mono" data-status="archived" id="tabArchived">ARCHIVED</button>
     </div>
 
     <div class="history-filters">
@@ -998,6 +1105,11 @@
             <option value="prose">Prose</option>
             <option value="mixed">Mixed</option>
           </select>
+          <select id="prefProvider" class="mono">
+            <option value="anthropic">Claude</option>
+            <option value="openai">GPT</option>
+            <option value="gemini">Gemini</option>
+          </select>
           <button class="link-btn mono" id="savePrefsBtn">SAVE</button>
         </div>
         <div class="action-row-status mono" id="prefsStatus"></div>
@@ -1056,18 +1168,48 @@
   <div class="modal-overlay hidden" id="authModal">
     <div class="modal-card">
       <button class="modal-close" id="authModalClose">&times;</button>
-      <h2 id="authModalTitle">Sign in</h2>
-      <form id="authForm">
-        <label class="field-label mono" for="authEmail">Email</label>
-        <input type="email" id="authEmail" required autocomplete="email">
-        <label class="field-label mono" for="authPassword">Password</label>
-        <input type="password" id="authPassword" required autocomplete="current-password" minlength="8">
-        <div class="auth-error mono" id="authError"></div>
-        <button type="submit" class="auth-submit" id="authSubmitBtn">SIGN IN</button>
-      </form>
-      <p class="auth-switch mono" id="authSwitch">
-        No account? <a href="#" id="authSwitchLink">Create one</a>
-      </p>
+
+      <div id="authFormScreen">
+        <h2 id="authModalTitle">Sign in</h2>
+        <form id="authForm">
+          <label class="field-label mono" for="authEmail">Email</label>
+          <input type="email" id="authEmail" required autocomplete="email">
+          <label class="field-label mono" for="authPassword">Password</label>
+          <input type="password" id="authPassword" required autocomplete="current-password" minlength="8">
+          <div class="auth-error mono" id="authError"></div>
+          <button type="submit" class="auth-submit" id="authSubmitBtn">SIGN IN</button>
+        </form>
+        <p class="auth-switch mono" id="authForgotP">
+          <a href="#" id="forgotPasswordLink">Forgot password?</a>
+        </p>
+        <p class="auth-switch mono" id="authSwitch">
+          No account? <a href="#" id="authSwitchLink">Create one</a>
+        </p>
+      </div>
+
+      <div class="hidden" id="forgotEmailScreen">
+        <h2>Reset password</h2>
+        <form id="forgotEmailForm">
+          <label class="field-label mono" for="forgotEmail">Email</label>
+          <input type="email" id="forgotEmail" required autocomplete="email">
+          <div class="auth-error mono" id="forgotError"></div>
+          <button type="submit" class="auth-submit">SEND CODE</button>
+        </form>
+        <p class="auth-switch mono"><a href="#" id="backToSignInLink">Back to sign in</a></p>
+      </div>
+
+      <div class="hidden" id="resetCodeScreen">
+        <h2>Enter your code</h2>
+        <p class="token-hint mono" id="resetHint"></p>
+        <form id="resetCodeForm">
+          <label class="field-label mono" for="resetCode">6-digit code</label>
+          <input type="text" id="resetCode" required maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+          <label class="field-label mono" for="resetNewPassword">New password</label>
+          <input type="password" id="resetNewPassword" required minlength="8" autocomplete="new-password">
+          <div class="auth-error mono" id="resetError"></div>
+          <button type="submit" class="auth-submit">RESET PASSWORD</button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -1088,6 +1230,8 @@
   const resultSubmeta = document.getElementById('resultSubmeta');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
+  const titleAnswer = document.getElementById('titleAnswer');
+  const chaptersContainer = document.getElementById('chaptersContainer');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
   const tierBadge = document.getElementById('tierBadge');
@@ -1113,6 +1257,9 @@
   const clearFiltersBtn = document.getElementById('clearFiltersBtn');
   const historyList = document.getElementById('historyList');
   const historyEmpty = document.getElementById('historyEmpty');
+  const historyTabs = document.querySelectorAll('.history-tab');
+
+  let currentStatusTab = 'unread';
 
   let currentUser = null;
   let authMode = 'login'; // 'login' | 'signup'
@@ -1171,6 +1318,18 @@
     const comments = formatCount(item.comment_count);
     if (comments != null) parts.push(`${comments} comments`);
     return parts.join(' · ');
+  }
+
+  function chaptersHtml(item) {
+    if (!item.chapters || item.chapters.length === 0) return '';
+    const links = item.chapters.map(ch => {
+      const url = `${watchUrl(item)}&t=${ch.seconds}s`;
+      return `<a class="chapter-link" href="${url}" target="_blank" rel="noopener">
+        <span class="chapter-time mono">${formatDuration(ch.seconds)}</span>
+        <span>${escapeHtml(ch.label)}</span>
+      </a>`;
+    }).join('');
+    return `<div class="chapters-list"><div class="chapters-heading mono">Chapters</div>${links}</div>`;
   }
 
   function sentimentPillHtml(item) {
@@ -1239,6 +1398,7 @@
       e.preventDefault();
       openAuthModal(mode === 'login' ? 'signup' : 'login');
     });
+    showAuthScreen('authFormScreen');
     authModal.classList.remove('hidden');
     authEmail.focus();
   }
@@ -1246,6 +1406,90 @@
   function closeAuthModal() {
     authModal.classList.add('hidden');
   }
+
+  // ---------- forgot password ----------
+  const authFormScreen = document.getElementById('authFormScreen');
+  const forgotEmailScreen = document.getElementById('forgotEmailScreen');
+  const resetCodeScreen = document.getElementById('resetCodeScreen');
+  const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+  const backToSignInLink = document.getElementById('backToSignInLink');
+  const forgotEmailForm = document.getElementById('forgotEmailForm');
+  const forgotEmail = document.getElementById('forgotEmail');
+  const forgotError = document.getElementById('forgotError');
+  const resetCodeForm = document.getElementById('resetCodeForm');
+  const resetCode = document.getElementById('resetCode');
+  const resetNewPassword = document.getElementById('resetNewPassword');
+  const resetError = document.getElementById('resetError');
+  const resetHint = document.getElementById('resetHint');
+
+  function showAuthScreen(id) {
+    [authFormScreen, forgotEmailScreen, resetCodeScreen].forEach(el => {
+      el.classList.toggle('hidden', el.id !== id);
+    });
+  }
+
+  forgotPasswordLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    forgotError.textContent = '';
+    forgotEmail.value = authEmail.value || '';
+    showAuthScreen('forgotEmailScreen');
+  });
+
+  backToSignInLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    showAuthScreen('authFormScreen');
+  });
+
+  forgotEmailForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    forgotError.textContent = '';
+    try {
+      const res = await fetch('/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.value.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Something went wrong.');
+      }
+      resetError.textContent = '';
+      resetCode.value = '';
+      resetNewPassword.value = '';
+      resetHint.textContent = `If ${forgotEmail.value.trim()} has an account, a code is on its way — enter it below.`;
+      showAuthScreen('resetCodeScreen');
+    } catch (err) {
+      forgotError.textContent = err.message || 'Something went wrong.';
+    }
+  });
+
+  resetCodeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    resetError.textContent = '';
+    try {
+      const res = await fetch('/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: forgotEmail.value.trim(),
+          code: resetCode.value.trim(),
+          new_password: resetNewPassword.value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const detail = Array.isArray(data.detail)
+          ? data.detail.map(d => d.msg).join(' ')
+          : (data.detail || 'Something went wrong.');
+        throw new Error(detail);
+      }
+      openAuthModal('login');
+      authEmail.value = forgotEmail.value.trim();
+      authError.textContent = 'Password reset — sign in with your new password.';
+    } catch (err) {
+      resetError.textContent = err.message || 'Something went wrong.';
+    }
+  });
 
   authModalClose.addEventListener('click', closeAuthModal);
   authModal.addEventListener('click', (e) => {
@@ -1380,6 +1624,7 @@
   const deleteAccountBtn = document.getElementById('deleteAccountBtn');
   const prefLength = document.getElementById('prefLength');
   const prefFormat = document.getElementById('prefFormat');
+  const prefProvider = document.getElementById('prefProvider');
   const savePrefsBtn = document.getElementById('savePrefsBtn');
   const prefsStatus = document.getElementById('prefsStatus');
 
@@ -1391,6 +1636,7 @@
       const prefs = await res.json();
       prefLength.value = prefs.summary_length;
       prefFormat.value = prefs.summary_format;
+      prefProvider.value = prefs.ai_provider;
     } catch { /* leave selects at their defaults */ }
   }
 
@@ -1400,7 +1646,11 @@
       const res = await fetch('/auth/preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary_length: prefLength.value, summary_format: prefFormat.value }),
+        body: JSON.stringify({
+          summary_length: prefLength.value,
+          summary_format: prefFormat.value,
+          ai_provider: prefProvider.value,
+        }),
       });
       prefsStatus.textContent = res.ok ? 'Saved.' : 'Something went wrong — try again.';
     } catch {
@@ -1487,6 +1737,14 @@
     await loadHistory();
   }
 
+  historyTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      currentStatusTab = tab.dataset.status;
+      historyTabs.forEach(t => t.classList.toggle('active', t === tab));
+      loadHistory();
+    });
+  });
+
   backToMainBtn.addEventListener('click', showMainView);
   clearFiltersBtn.addEventListener('click', () => {
     dateFilter.value = '';
@@ -1508,8 +1766,64 @@
     } catch { /* leave as-is */ }
   }
 
+  async function setHistoryStatus(id, status) {
+    await fetch(`/history/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    loadHistory();
+  }
+
+  function buildCardActions(item) {
+    const wrap = document.createElement('div');
+    wrap.className = 'history-card-actions';
+
+    if (currentStatusTab === 'archived') {
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'history-card-action-btn';
+      restoreBtn.textContent = 'RESTORE';
+      restoreBtn.addEventListener('click', () => setHistoryStatus(item.id, 'unread'));
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'history-card-action-btn danger';
+      deleteBtn.textContent = 'DELETE FOREVER';
+      let confirming = false;
+      deleteBtn.addEventListener('click', async () => {
+        if (!confirming) {
+          confirming = true;
+          deleteBtn.textContent = 'CONFIRM?';
+          setTimeout(() => {
+            if (confirming) { confirming = false; deleteBtn.textContent = 'DELETE FOREVER'; }
+          }, 3000);
+          return;
+        }
+        await fetch(`/history/${item.id}`, { method: 'DELETE' });
+        loadHistory();
+      });
+
+      wrap.append(restoreBtn, deleteBtn);
+    } else {
+      const toggleReadBtn = document.createElement('button');
+      toggleReadBtn.className = 'history-card-action-btn';
+      const isRead = currentStatusTab === 'read';
+      toggleReadBtn.textContent = isRead ? 'MARK UNREAD' : 'MARK READ';
+      toggleReadBtn.addEventListener('click', () => setHistoryStatus(item.id, isRead ? 'unread' : 'read'));
+
+      const archiveBtn = document.createElement('button');
+      archiveBtn.className = 'history-card-action-btn';
+      archiveBtn.textContent = 'ARCHIVE';
+      archiveBtn.addEventListener('click', () => setHistoryStatus(item.id, 'archived'));
+
+      wrap.append(toggleReadBtn, archiveBtn);
+    }
+
+    return wrap;
+  }
+
   async function loadHistory() {
     const params = new URLSearchParams();
+    params.set('status', currentStatusTab);
     if (dateFilter.value) params.set('date', dateFilter.value);
     if (categoryFilter.value) params.set('category', categoryFilter.value);
 
@@ -1522,6 +1836,9 @@
       const items = await res.json();
 
       if (items.length === 0) {
+        historyEmpty.textContent = currentStatusTab === 'unread'
+          ? 'No summaries yet — go summarize something.'
+          : `No ${currentStatusTab} summaries.`;
         historyEmpty.classList.add('visible');
         return;
       }
@@ -1549,6 +1866,7 @@
         card.innerHTML = `
           <div class="history-card-header">
             ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : ''}
+            ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
               <span class="category-pill mono">${item.category}</span>
               ${sentimentPillHtml(item)}
@@ -1557,7 +1875,7 @@
             </div>
             ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
-          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}</div>
+          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}</div>
         `;
 
         const toggleBtn = card.querySelector('.history-card-toggle');
@@ -1565,6 +1883,8 @@
           const expanded = card.classList.toggle('expanded');
           toggleBtn.textContent = expanded ? 'COLLAPSE ▴' : 'EXPAND ▾';
         });
+
+        card.querySelector('.history-card-header').appendChild(buildCardActions(item));
 
         historyList.appendChild(card);
       }
@@ -1626,7 +1946,9 @@
       categoryPill.textContent = data.category || '';
       resultTitle.innerHTML = titleLinkHtml(data);
       resultSubmeta.innerHTML = buildSubmeta(data);
+      titleAnswer.textContent = data.title_answer || '';
       summaryText.textContent = data.summary;
+      chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       sentimentBlurb.textContent = data.sentiment_blurb || '';
       result.classList.add('visible');

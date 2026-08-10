@@ -64,6 +64,7 @@ def get_video_metadata(video_id: str) -> dict | None:
 
             return {
                 "title": snippet.get("title"),
+                "description": snippet.get("description"),
                 "channel": snippet.get("channelTitle"),
                 "channel_id": snippet.get("channelId"),
                 "view_count": int(view_count) if view_count is not None else None,
