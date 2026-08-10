@@ -3,7 +3,9 @@ Email + password auth. Session is a JWT stored in an httpOnly cookie
 (not localStorage, so it isn't reachable from page JS/XSS).
 """
 
+import hashlib
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -14,7 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User
+from app.models import ApiToken, User
+
+TOKEN_PREFIX = "skim_"
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
@@ -56,6 +60,24 @@ class UserOut(BaseModel):
     email: str
 
 
+class CreateTokenRequest(BaseModel):
+    label: str = ""
+
+
+class TokenCreatedOut(BaseModel):
+    id: int
+    token: str
+    label: str
+    created_at: datetime
+
+
+class TokenOut(BaseModel):
+    id: int
+    label: str
+    created_at: datetime
+    last_used_at: datetime | None
+
+
 def _hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
@@ -73,6 +95,27 @@ def _issue_token(user_id: int) -> str:
     return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
 
 
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _user_from_bearer_token(request: Request, db: Session) -> User | None:
+    header = request.headers.get("authorization")
+    if not header or not header.lower().startswith("bearer "):
+        return None
+    raw_token = header[len("bearer "):].strip()
+    if not raw_token:
+        return None
+
+    api_token = db.scalar(select(ApiToken).where(ApiToken.token_hash == _hash_token(raw_token)))
+    if not api_token:
+        return None
+
+    api_token.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    return db.get(User, api_token.user_id)
+
+
 def _set_session_cookie(response: Response, user_id: int) -> None:
     token = _issue_token(user_id)
     response.set_cookie(
@@ -86,18 +129,24 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User | None:
-    """Optional auth: returns the User if a valid session cookie is present, else None."""
+    """
+    Optional auth: resolves to a User via session cookie (browser) or a
+    personal API token in the Authorization header (e.g. iOS Shortcuts),
+    else None.
+    """
     token = request.cookies.get(SESSION_COOKIE)
-    if not token or not JWT_SECRET:
-        return None
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.PyJWTError:
-        return None
-    user_id = payload.get("sub")
-    if not user_id:
-        return None
-    return db.get(User, int(user_id))
+    if token and JWT_SECRET:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id:
+                user = db.get(User, int(user_id))
+                if user:
+                    return user
+        except jwt.PyJWTError:
+            pass
+
+    return _user_from_bearer_token(request, db)
 
 
 def require_user(user: User | None = Depends(get_current_user)) -> User:
@@ -143,3 +192,35 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut | None)
 def me(user: User | None = Depends(get_current_user)):
     return UserOut(email=user.email) if user else None
+
+
+@router.post("/tokens", response_model=TokenCreatedOut)
+def create_token(body: CreateTokenRequest, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    raw_token = TOKEN_PREFIX + secrets.token_urlsafe(32)
+    row = ApiToken(user_id=user.id, token_hash=_hash_token(raw_token), label=body.label.strip()[:100])
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    return TokenCreatedOut(id=row.id, token=raw_token, label=row.label, created_at=row.created_at)
+
+
+@router.get("/tokens", response_model=list[TokenOut])
+def list_tokens(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    rows = db.scalars(
+        select(ApiToken).where(ApiToken.user_id == user.id).order_by(ApiToken.created_at.desc())
+    ).all()
+    return [
+        TokenOut(id=r.id, label=r.label, created_at=r.created_at, last_used_at=r.last_used_at)
+        for r in rows
+    ]
+
+
+@router.delete("/tokens/{token_id}")
+def revoke_token(token_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    row = db.scalar(select(ApiToken).where(ApiToken.id == token_id, ApiToken.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Token not found.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
