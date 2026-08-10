@@ -299,7 +299,28 @@
     color: var(--slate);
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin-bottom: 8px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+
+  .chapters-heading::-webkit-details-marker { display: none; }
+
+  .chapters-heading::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform 0.15s ease;
+  }
+
+  details[open] > .chapters-heading::before {
+    transform: rotate(90deg);
+  }
+
+  .chapters-heading:hover { color: var(--amber); }
+
+  .chapters-list > .chapter-link:first-of-type {
+    margin-top: 8px;
   }
 
   .chapter-link {
@@ -1347,7 +1368,10 @@
         <span>${escapeHtml(ch.label)}</span>
       </a>`;
     }).join('');
-    return `<div class="chapters-list"><div class="chapters-heading mono">Chapters</div>${links}</div>`;
+    return `<details class="chapters-list">
+      <summary class="chapters-heading mono">Sections (${item.chapters.length})</summary>
+      ${links}
+    </details>`;
   }
 
   function sentimentPillHtml(item) {

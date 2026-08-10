@@ -86,9 +86,9 @@ def _call_provider(provider: str, prompt: str, client: Anthropic | None = None) 
 
 CATEGORIES = [
     "Tech", "AI", "Agents", "Courses", "Business", "Finance", "Entertainment",
-    "Comedy", "Music", "Gaming", "News", "Politics", "Science", "Education",
-    "Health", "Fitness", "Cooking", "Travel", "Sports", "DIY & How-To",
-    "Reviews", "Documentary", "Other",
+    "Comedy", "Music", "Gaming", "Runescape", "News", "Politics", "Science",
+    "Education", "Health", "Fitness", "Cooking", "Travel", "Sports",
+    "DIY & How-To", "Reviews", "Documentary", "Other",
 ]
 
 _BULLET_COUNTS = {"brief": (1, 3), "standard": (4, 8), "detailed": (6, 10)}
@@ -112,6 +112,35 @@ def _looks_like_it_has_timestamps(description: str | None, comments: list[dict] 
             if len(_TIMESTAMP_HINT_RE.findall(c.get("text", ""))) >= 2:
                 return True
     return False
+
+
+def _bucket_transcript_by_time(
+    segments: list[dict] | None, bucket_seconds: int = 45, max_chars: int = 20_000
+) -> str:
+    """
+    Collapse per-line transcript snippets into coarse time buckets (e.g.
+    "[03:15] ...") so the model has real timestamps to anchor an inferred
+    section outline to, without blowing up the prompt with every caption
+    line's own timestamp.
+    """
+    if not segments:
+        return ""
+
+    buckets: dict[int, list[str]] = {}
+    for seg in segments:
+        bucket_start = int(seg["start"] // bucket_seconds) * bucket_seconds
+        buckets.setdefault(bucket_start, []).append(seg["text"])
+
+    lines = []
+    total = 0
+    for bucket_start in sorted(buckets):
+        mm, ss = divmod(bucket_start, 60)
+        line = f"[{mm:02d}:{ss:02d}] {' '.join(buckets[bucket_start])}"
+        total += len(line)
+        if total > max_chars:
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _structure_instructions(length: str, fmt: str) -> str:
@@ -151,6 +180,7 @@ def build_prompt(
     comments: list[dict] | None = None,
     title: str | None = None,
     description: str | None = None,
+    transcript_segments: list[dict] | None = None,
 ) -> str:
     category_list = ", ".join(CATEGORIES)
     structure = _structure_instructions(length, format)
@@ -164,7 +194,9 @@ def build_prompt(
             "If the title isn't a question or claim, write NONE>"
         )
 
-    if _looks_like_it_has_timestamps(description, comments):
+    has_declared_chapters = _looks_like_it_has_timestamps(description, comments)
+    timestamped_transcript = ""
+    if has_declared_chapters:
         header_lines.append(
             "TIMESTAMPS: <the description or comments below appear to contain chapter "
             "timestamps (MM:SS style). Extract ONLY the ones explicitly written there, output "
@@ -173,6 +205,19 @@ def build_prompt(
             "then immediately the '---' line. Do not add, guess, or infer any timestamp that "
             "isn't literally written in the description/comments below.>"
         )
+    elif transcript_segments:
+        timestamped_transcript = _bucket_transcript_by_time(transcript_segments)
+        if timestamped_transcript:
+            header_lines.append(
+                "TIMESTAMPS: <using the TIMESTAMPED TRANSCRIPT below, break the video into its "
+                "main sections by topic change. Output each as its own line right after this "
+                "one, formatted exactly 'MM:SS | short label' (2-6 words, no ending punctuation) "
+                "— one section per line, no blank lines between them, then immediately the '---' "
+                "line. Aim for roughly one section every 2-4 minutes of runtime; a short or "
+                "single-topic video can have as few as 2-3 sections — don't force more than the "
+                "content naturally has. Use only timestamps that appear in the TIMESTAMPED "
+                "TRANSCRIPT below.>"
+            )
 
     if comments:
         header_lines.append(
@@ -188,6 +233,11 @@ def build_prompt(
         extra_context += (
             "\n\nVIDEO DESCRIPTION (use only to find chapter timestamps if present, "
             f"not for the summary itself):\n{description[:3000]}"
+        )
+    if timestamped_transcript:
+        extra_context += (
+            "\n\nTIMESTAMPED TRANSCRIPT (use only to determine section timestamps, "
+            f"not for the summary itself):\n{timestamped_transcript}"
         )
     if comments:
         comment_lines = "\n".join(f'[{c["like_count"]} likes] "{c["text"]}"' for c in comments)
@@ -306,6 +356,7 @@ def summarize(
     title: str | None = None,
     description: str | None = None,
     provider: str = "anthropic",
+    transcript_segments: list[dict] | None = None,
 ) -> dict:
     """
     Summarize a transcript with the chosen provider. Returns
@@ -319,7 +370,7 @@ def summarize(
     truncated = transcript_text[:100_000]
     prompt = build_prompt(
         truncated, length=length, format=format, comments=comments,
-        title=title, description=description,
+        title=title, description=description, transcript_segments=transcript_segments,
     )
 
     raw = _call_provider(provider, prompt, client=client)

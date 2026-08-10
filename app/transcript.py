@@ -109,6 +109,7 @@ def _fetch_transcript_once(video_id: str, languages: list[str]) -> dict:
     return {
         "video_id": video_id,
         "text": full_text,
+        "segments": [{"text": s.text.strip(), "start": s.start} for s in snippets],
         "duration_seconds": duration,
         "language": transcript.language_code,
     }
@@ -126,6 +127,7 @@ def get_transcript(url: str, languages: Optional[list[str]] = None) -> dict:
         {
             "video_id": str,
             "text": str,          # full transcript, whitespace-joined
+            "segments": list[dict],  # [{"text": str, "start": float}, ...]
             "duration_seconds": float,
             "language": str,
         }

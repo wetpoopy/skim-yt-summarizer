@@ -199,6 +199,7 @@ def summarize_video(
             title=metadata.get("title"),
             description=metadata.get("description"),
             provider=provider,
+            transcript_segments=transcript_data.get("segments"),
         )
     except SummarizerError as e:
         raise HTTPException(status_code=502, detail=str(e))
