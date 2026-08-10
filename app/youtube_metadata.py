@@ -13,7 +13,8 @@ import time
 
 import requests
 
-YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos"
+YOUTUBE_VIDEOS_API_URL = "https://www.googleapis.com/youtube/v3/videos"
+YOUTUBE_CHANNELS_API_URL = "https://www.googleapis.com/youtube/v3/channels"
 
 # This hits Google's API directly (no rotating proxy involved), so it's
 # far more reliable than the transcript fetch — a light retry is enough
@@ -38,7 +39,7 @@ def get_video_metadata(video_id: str) -> dict | None:
     for attempt in range(MAX_METADATA_ATTEMPTS):
         try:
             response = requests.get(
-                YOUTUBE_API_URL,
+                YOUTUBE_VIDEOS_API_URL,
                 params={
                     "part": "snippet,contentDetails,statistics",
                     "id": video_id,
@@ -58,6 +59,7 @@ def get_video_metadata(video_id: str) -> dict | None:
 
             view_count = statistics.get("viewCount")
             comment_count = statistics.get("commentCount")
+            like_count = statistics.get("likeCount")
             duration = content_details.get("duration")
 
             return {
@@ -66,8 +68,40 @@ def get_video_metadata(video_id: str) -> dict | None:
                 "channel_id": snippet.get("channelId"),
                 "view_count": int(view_count) if view_count is not None else None,
                 "comment_count": int(comment_count) if comment_count is not None else None,
+                "like_count": int(like_count) if like_count is not None else None,
                 "duration_seconds": _parse_iso8601_duration(duration) if duration else None,
             }
+        except Exception:
+            if attempt < MAX_METADATA_ATTEMPTS - 1:
+                time.sleep(RETRY_BACKOFF_SECONDS[attempt])
+
+    return None
+
+
+def get_channel_subscriber_count(channel_id: str) -> int | None:
+    """
+    Best-effort subscriber count. Returns None if missing key, any
+    failure, or the channel has subscriber count hidden (a channel
+    setting YouTube honors — not an error, just not public data).
+    """
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key or not channel_id:
+        return None
+
+    for attempt in range(MAX_METADATA_ATTEMPTS):
+        try:
+            response = requests.get(
+                YOUTUBE_CHANNELS_API_URL,
+                params={"part": "statistics", "id": channel_id, "key": api_key},
+                timeout=10,
+            )
+            response.raise_for_status()
+            items = response.json().get("items", [])
+            if not items:
+                return None
+
+            subscriber_count = items[0].get("statistics", {}).get("subscriberCount")
+            return int(subscriber_count) if subscriber_count is not None else None
         except Exception:
             if attempt < MAX_METADATA_ATTEMPTS - 1:
                 time.sleep(RETRY_BACKOFF_SECONDS[attempt])

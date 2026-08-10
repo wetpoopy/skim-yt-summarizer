@@ -20,6 +20,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    summary_length: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    summary_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     summaries: Mapped[list["Summary"]] = relationship(back_populates="user")
     api_tokens: Mapped[list["ApiToken"]] = relationship(back_populates="user")
 
@@ -54,6 +57,10 @@ class Summary(Base):
     channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    subscriber_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sentiment_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="summaries")

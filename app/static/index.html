@@ -267,6 +267,39 @@
     letter-spacing: 0.04em;
   }
 
+  .sentiment-pill {
+    font-size: 10px;
+    border-radius: 20px;
+    padding: 3px 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .sentiment-pill.sentiment-positive {
+    color: #4ADE80;
+    border: 1px solid rgba(74, 222, 128, 0.35);
+  }
+
+  .sentiment-pill.sentiment-negative {
+    color: var(--danger);
+    border: 1px solid rgba(229, 72, 77, 0.35);
+  }
+
+  .sentiment-pill.sentiment-mixed {
+    color: var(--slate);
+    border: 1px solid var(--line);
+  }
+
+  .sentiment-blurb {
+    font-size: 12.5px;
+    color: var(--slate);
+    line-height: 1.5;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+
+  .sentiment-blurb:empty { display: none; }
+
   /* ---------- auth modal ---------- */
   .modal-overlay {
     position: fixed;
@@ -497,6 +530,25 @@
     gap: 8px;
     margin-top: 10px;
   }
+
+  .preferences-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .preferences-row select {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-size: 12px;
+    padding: 9px 10px;
+    outline: none;
+  }
+
+  .preferences-row select:focus { border-color: var(--amber); }
 
   .confirm-input {
     flex: 1;
@@ -819,6 +871,7 @@
     .token-value-row { flex-direction: column; align-items: stretch; }
     .export-btn-row { flex-wrap: wrap; }
     .confirm-row { flex-direction: column; align-items: stretch; }
+    .preferences-row { flex-direction: column; align-items: stretch; }
   }
 </style>
 </head>
@@ -873,9 +926,11 @@
         <div class="result-meta">
           <span class="video-id mono" id="videoId"></span>
           <span class="category-pill mono" id="categoryPill"></span>
+          <span id="sentimentPillContainer"></span>
           <button class="copy-btn mono" id="copyBtn">COPY</button>
         </div>
         <div class="summary-text" id="summaryText"></div>
+        <div class="sentiment-blurb" id="sentimentBlurb"></div>
       </div>
     </div>
   </div>
@@ -926,6 +981,27 @@
     <div class="modal-card actions-modal-card">
       <button class="modal-close" id="actionsModalClose">&times;</button>
       <h2>Actions</h2>
+
+      <div class="action-row action-row-stack">
+        <div>
+          <div class="action-row-title">Summary preferences</div>
+          <div class="action-row-desc mono">Applies to every summary you generate from now on.</div>
+        </div>
+        <div class="preferences-row">
+          <select id="prefLength" class="mono">
+            <option value="brief">Brief</option>
+            <option value="standard">Standard</option>
+            <option value="detailed">Detailed</option>
+          </select>
+          <select id="prefFormat" class="mono">
+            <option value="bullets">Bullet points</option>
+            <option value="prose">Prose</option>
+            <option value="mixed">Mixed</option>
+          </select>
+          <button class="link-btn mono" id="savePrefsBtn">SAVE</button>
+        </div>
+        <div class="action-row-status mono" id="prefsStatus"></div>
+      </div>
 
       <div class="action-row">
         <div>
@@ -1010,6 +1086,8 @@
   const categoryPill = document.getElementById('categoryPill');
   const resultTitle = document.getElementById('resultTitle');
   const resultSubmeta = document.getElementById('resultSubmeta');
+  const sentimentPillContainer = document.getElementById('sentimentPillContainer');
+  const sentimentBlurb = document.getElementById('sentimentBlurb');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
   const tierBadge = document.getElementById('tierBadge');
@@ -1076,19 +1154,32 @@
     const parts = [];
     if (item.channel) {
       const channelText = escapeHtml(item.channel);
+      const subs = formatCount(item.subscriber_count);
+      const channelLabel = subs != null ? `${channelText} (${subs} subscribers)` : channelText;
       parts.push(
         item.channel_id
-          ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelText}</a>`
-          : channelText
+          ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelLabel}</a>`
+          : channelLabel
       );
     }
     const duration = formatDuration(item.duration_seconds);
     if (duration) parts.push(duration);
     const views = formatCount(item.view_count);
     if (views != null) parts.push(`${views} views`);
+    const likes = formatCount(item.like_count);
+    if (likes != null) parts.push(`${likes} likes`);
     const comments = formatCount(item.comment_count);
     if (comments != null) parts.push(`${comments} comments`);
     return parts.join(' · ');
+  }
+
+  function sentimentPillHtml(item) {
+    if (!item.sentiment_label) return '';
+    const label = item.sentiment_label.toLowerCase();
+    let cls = 'sentiment-mixed';
+    if (label.includes('positive')) cls = 'sentiment-positive';
+    else if (label.includes('negative')) cls = 'sentiment-negative';
+    return `<span class="sentiment-pill mono ${cls}">${escapeHtml(item.sentiment_label)}</span>`;
   }
 
   function renderAuthArea() {
@@ -1287,6 +1378,35 @@
   const deleteHistoryStatus = document.getElementById('deleteHistoryStatus');
   const deleteAccountConfirmInput = document.getElementById('deleteAccountConfirmInput');
   const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+  const prefLength = document.getElementById('prefLength');
+  const prefFormat = document.getElementById('prefFormat');
+  const savePrefsBtn = document.getElementById('savePrefsBtn');
+  const prefsStatus = document.getElementById('prefsStatus');
+
+  async function loadPreferences() {
+    prefsStatus.textContent = '';
+    try {
+      const res = await fetch('/auth/preferences');
+      if (!res.ok) return;
+      const prefs = await res.json();
+      prefLength.value = prefs.summary_length;
+      prefFormat.value = prefs.summary_format;
+    } catch { /* leave selects at their defaults */ }
+  }
+
+  savePrefsBtn.addEventListener('click', async () => {
+    prefsStatus.textContent = '';
+    try {
+      const res = await fetch('/auth/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary_length: prefLength.value, summary_format: prefFormat.value }),
+      });
+      prefsStatus.textContent = res.ok ? 'Saved.' : 'Something went wrong — try again.';
+    } catch {
+      prefsStatus.textContent = 'Something went wrong — try again.';
+    }
+  });
 
   function openActionsModal() {
     deleteHistoryConfirmInput.value = '';
@@ -1295,6 +1415,7 @@
     deleteAccountBtn.disabled = true;
     deleteHistoryStatus.textContent = '';
     actionsModal.classList.remove('hidden');
+    loadPreferences();
   }
 
   function closeActionsModal() {
@@ -1430,12 +1551,13 @@
             ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : ''}
             <div class="history-card-meta">
               <span class="category-pill mono">${item.category}</span>
+              ${sentimentPillHtml(item)}
               <span class="history-card-time mono">${timeOfDay}</span>
               <button class="history-card-toggle mono">EXPAND ▾</button>
             </div>
             ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
-          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}</div>
+          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}</div>
         `;
 
         const toggleBtn = card.querySelector('.history-card-toggle');
@@ -1505,6 +1627,8 @@
       resultTitle.innerHTML = titleLinkHtml(data);
       resultSubmeta.innerHTML = buildSubmeta(data);
       summaryText.textContent = data.summary;
+      sentimentPillContainer.innerHTML = sentimentPillHtml(data);
+      sentimentBlurb.textContent = data.sentiment_blurb || '';
       result.classList.add('visible');
 
       if (typeof data.remaining_today === 'number') {

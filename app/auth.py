@@ -7,6 +7,7 @@ import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 import bcrypt
 import jwt
@@ -76,6 +77,16 @@ class TokenOut(BaseModel):
     label: str
     created_at: datetime
     last_used_at: datetime | None
+
+
+class PreferencesOut(BaseModel):
+    summary_length: Literal["brief", "standard", "detailed"]
+    summary_format: Literal["bullets", "prose", "mixed"]
+
+
+class PreferencesUpdate(BaseModel):
+    summary_length: Literal["brief", "standard", "detailed"]
+    summary_format: Literal["bullets", "prose", "mixed"]
 
 
 def _hash_password(password: str) -> str:
@@ -235,3 +246,21 @@ def revoke_token(token_id: int, user: User = Depends(require_user), db: Session 
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/preferences", response_model=PreferencesOut)
+def get_preferences(user: User = Depends(require_user)):
+    return PreferencesOut(
+        summary_length=user.summary_length or "standard",
+        summary_format=user.summary_format or "mixed",
+    )
+
+
+@router.put("/preferences", response_model=PreferencesOut)
+def update_preferences(
+    body: PreferencesUpdate, user: User = Depends(require_user), db: Session = Depends(get_db)
+):
+    user.summary_length = body.summary_length
+    user.summary_format = body.summary_format
+    db.commit()
+    return PreferencesOut(summary_length=user.summary_length, summary_format=user.summary_format)

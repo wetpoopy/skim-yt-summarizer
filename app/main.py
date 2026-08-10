@@ -34,7 +34,8 @@ from app.models import Summary, User
 from app.transcript import get_transcript, TranscriptError
 from app.summarizer import summarize, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
-from app.youtube_metadata import get_video_metadata
+from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
+from app.youtube_comments import get_top_comments
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
 
@@ -79,7 +80,11 @@ class SummarizeResponse(BaseModel):
     channel_id: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
+    like_count: int | None = None
     duration_seconds: int | None = None
+    subscriber_count: int | None = None
+    sentiment_label: str | None = None
+    sentiment_blurb: str | None = None
 
 
 class HistoryItem(BaseModel):
@@ -95,7 +100,11 @@ class HistoryItem(BaseModel):
     channel_id: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
+    like_count: int | None = None
     duration_seconds: int | None = None
+    subscriber_count: int | None = None
+    sentiment_label: str | None = None
+    sentiment_blurb: str | None = None
 
 
 @app.get("/health")
@@ -135,12 +144,21 @@ def summarize_video(
     except TranscriptError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    try:
-        result = summarize(transcript_data["text"], client=client)
-    except SummarizerError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    length = (user.summary_length if user else None) or "standard"
+    fmt = (user.summary_format if user else None) or "mixed"
 
     metadata = get_video_metadata(transcript_data["video_id"]) or {}
+    comments = get_top_comments(transcript_data["video_id"])
+    subscriber_count = (
+        get_channel_subscriber_count(metadata["channel_id"]) if metadata.get("channel_id") else None
+    )
+
+    try:
+        result = summarize(
+            transcript_data["text"], client=client, length=length, format=fmt, comments=comments
+        )
+    except SummarizerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
     saved = False
     if user is not None:
@@ -156,7 +174,11 @@ def summarize_video(
             channel_id=metadata.get("channel_id"),
             view_count=metadata.get("view_count"),
             comment_count=metadata.get("comment_count"),
+            like_count=metadata.get("like_count"),
             duration_seconds=metadata.get("duration_seconds"),
+            subscriber_count=subscriber_count,
+            sentiment_label=result.get("sentiment_label"),
+            sentiment_blurb=result.get("sentiment_blurb"),
         )
         db.add(row)
         db.commit()
@@ -174,7 +196,11 @@ def summarize_video(
         channel_id=metadata.get("channel_id"),
         view_count=metadata.get("view_count"),
         comment_count=metadata.get("comment_count"),
+        like_count=metadata.get("like_count"),
         duration_seconds=metadata.get("duration_seconds"),
+        subscriber_count=subscriber_count,
+        sentiment_label=result.get("sentiment_label"),
+        sentiment_blurb=result.get("sentiment_blurb"),
     )
 
 
@@ -209,7 +235,11 @@ def get_history(
             channel_id=r.channel_id,
             view_count=r.view_count,
             comment_count=r.comment_count,
+            like_count=r.like_count,
             duration_seconds=r.duration_seconds,
+            subscriber_count=r.subscriber_count,
+            sentiment_label=r.sentiment_label,
+            sentiment_blurb=r.sentiment_blurb,
         )
         for r in rows
     ]
@@ -242,11 +272,15 @@ def export_history(
                     "title": r.title,
                     "channel": r.channel,
                     "channel_id": r.channel_id,
+                    "subscriber_count": r.subscriber_count,
                     "category": r.category,
                     "language": r.language,
                     "view_count": r.view_count,
                     "comment_count": r.comment_count,
+                    "like_count": r.like_count,
                     "duration_seconds": r.duration_seconds,
+                    "sentiment_label": r.sentiment_label,
+                    "sentiment_blurb": r.sentiment_blurb,
                     "summary": r.summary_text,
                     "created_at": r.created_at.isoformat(),
                 }
@@ -262,15 +296,17 @@ def export_history(
         writer = csv.writer(buf)
         writer.writerow(
             [
-                "created_at", "video_id", "title", "channel", "category", "language",
-                "view_count", "comment_count", "duration_seconds", "url", "summary",
+                "created_at", "video_id", "title", "channel", "subscriber_count", "category", "language",
+                "view_count", "like_count", "comment_count", "duration_seconds",
+                "sentiment_label", "sentiment_blurb", "url", "summary",
             ]
         )
         for r in rows:
             writer.writerow(
                 [
-                    r.created_at.isoformat(), r.video_id, r.title, r.channel, r.category, r.language,
-                    r.view_count, r.comment_count, r.duration_seconds, r.url, r.summary_text,
+                    r.created_at.isoformat(), r.video_id, r.title, r.channel, r.subscriber_count,
+                    r.category, r.language, r.view_count, r.like_count, r.comment_count,
+                    r.duration_seconds, r.sentiment_label, r.sentiment_blurb, r.url, r.summary_text,
                 ]
             )
         content = buf.getvalue()
@@ -290,6 +326,9 @@ def export_history(
             lines.append(f"**{heading}** · {r.channel or 'Unknown channel'} · {r.category} · [{r.url}]({r.url})")
             lines.append("")
             lines.append(r.summary_text)
+            if r.sentiment_label:
+                lines.append("")
+                lines.append(f"**Comment sentiment:** {r.sentiment_label} — {r.sentiment_blurb or ''}")
             lines.append("")
         content = "\n".join(lines)
         media_type = "text/markdown"
