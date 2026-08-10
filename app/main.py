@@ -34,6 +34,7 @@ from app.models import Summary, User
 from app.transcript import get_transcript, TranscriptError
 from app.summarizer import summarize, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
+from app.youtube_metadata import get_video_metadata
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
 
@@ -73,6 +74,11 @@ class SummarizeResponse(BaseModel):
     language: str
     remaining_today: int | None = None
     saved: bool = False
+    title: str | None = None
+    channel: str | None = None
+    view_count: int | None = None
+    comment_count: int | None = None
+    duration_seconds: int | None = None
 
 
 class HistoryItem(BaseModel):
@@ -83,6 +89,11 @@ class HistoryItem(BaseModel):
     category: str
     language: str
     created_at: datetime
+    title: str | None = None
+    channel: str | None = None
+    view_count: int | None = None
+    comment_count: int | None = None
+    duration_seconds: int | None = None
 
 
 @app.get("/health")
@@ -127,6 +138,8 @@ def summarize_video(
     except SummarizerError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    metadata = get_video_metadata(transcript_data["video_id"]) or {}
+
     saved = False
     if user is not None:
         row = Summary(
@@ -136,6 +149,11 @@ def summarize_video(
             summary_text=result["summary"],
             category=result["category"],
             language=transcript_data["language"],
+            title=metadata.get("title"),
+            channel=metadata.get("channel"),
+            view_count=metadata.get("view_count"),
+            comment_count=metadata.get("comment_count"),
+            duration_seconds=metadata.get("duration_seconds"),
         )
         db.add(row)
         db.commit()
@@ -148,6 +166,11 @@ def summarize_video(
         language=transcript_data["language"],
         remaining_today=remaining,
         saved=saved,
+        title=metadata.get("title"),
+        channel=metadata.get("channel"),
+        view_count=metadata.get("view_count"),
+        comment_count=metadata.get("comment_count"),
+        duration_seconds=metadata.get("duration_seconds"),
     )
 
 
@@ -177,6 +200,11 @@ def get_history(
             category=r.category,
             language=r.language,
             created_at=r.created_at,
+            title=r.title,
+            channel=r.channel,
+            view_count=r.view_count,
+            comment_count=r.comment_count,
+            duration_seconds=r.duration_seconds,
         )
         for r in rows
     ]
@@ -206,8 +234,13 @@ def export_history(
                 {
                     "video_id": r.video_id,
                     "url": r.url,
+                    "title": r.title,
+                    "channel": r.channel,
                     "category": r.category,
                     "language": r.language,
+                    "view_count": r.view_count,
+                    "comment_count": r.comment_count,
+                    "duration_seconds": r.duration_seconds,
                     "summary": r.summary_text,
                     "created_at": r.created_at.isoformat(),
                 }
@@ -221,10 +254,18 @@ def export_history(
     elif format == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(["created_at", "video_id", "category", "language", "url", "summary"])
+        writer.writerow(
+            [
+                "created_at", "video_id", "title", "channel", "category", "language",
+                "view_count", "comment_count", "duration_seconds", "url", "summary",
+            ]
+        )
         for r in rows:
             writer.writerow(
-                [r.created_at.isoformat(), r.video_id, r.category, r.language, r.url, r.summary_text]
+                [
+                    r.created_at.isoformat(), r.video_id, r.title, r.channel, r.category, r.language,
+                    r.view_count, r.comment_count, r.duration_seconds, r.url, r.summary_text,
+                ]
             )
         content = buf.getvalue()
         media_type = "text/csv"
@@ -239,7 +280,8 @@ def export_history(
                 lines.append(f"## {day}")
                 lines.append("")
                 last_date = day
-            lines.append(f"**{r.video_id}** · {r.category} · [{r.url}]({r.url})")
+            heading = r.title or r.video_id
+            lines.append(f"**{heading}** · {r.channel or 'Unknown channel'} · {r.category} · [{r.url}]({r.url})")
             lines.append("")
             lines.append(r.summary_text)
             lines.append("")

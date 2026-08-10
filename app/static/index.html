@@ -156,11 +156,29 @@
     margin-bottom: 12px;
   }
 
+  .history-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
   .history-card-meta {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-bottom: 10px;
+  }
+
+  .history-card-time {
+    color: var(--slate);
+    font-size: 11px;
+    margin-left: auto;
+  }
+
+  .history-card-submeta {
+    font-size: 11px;
+    color: var(--slate);
+    margin: -4px 0 10px;
   }
 
   .history-date-heading {
@@ -654,6 +672,24 @@
     padding: 26px 26px 22px;
   }
 
+  .result-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+
+  .result-title:empty { display: none; }
+
+  .result-submeta {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.02em;
+    margin-bottom: 16px;
+  }
+
+  .result-submeta:empty { display: none; }
+
   .result-meta {
     display: flex;
     justify-content: space-between;
@@ -781,6 +817,8 @@
 
     <div class="result" id="result">
       <div class="result-card">
+        <div class="result-title" id="resultTitle"></div>
+        <div class="result-submeta mono" id="resultSubmeta"></div>
         <div class="result-meta">
           <span class="video-id mono" id="videoId"></span>
           <span class="category-pill mono" id="categoryPill"></span>
@@ -919,6 +957,8 @@
   const summaryText = document.getElementById('summaryText');
   const videoId = document.getElementById('videoId');
   const categoryPill = document.getElementById('categoryPill');
+  const resultTitle = document.getElementById('resultTitle');
+  const resultSubmeta = document.getElementById('resultSubmeta');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
   const tierBadge = document.getElementById('tierBadge');
@@ -947,6 +987,36 @@
 
   let currentUser = null;
   let authMode = 'login'; // 'login' | 'signup'
+
+  // ---------- formatters ----------
+  function formatDuration(seconds) {
+    if (seconds == null) return null;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const mm = h > 0 ? String(m).padStart(2, '0') : String(m);
+    const ss = String(s).padStart(2, '0');
+    return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  }
+
+  function formatCount(n) {
+    if (n == null) return null;
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function buildSubmeta(item) {
+    const parts = [];
+    if (item.channel) parts.push(item.channel);
+    const duration = formatDuration(item.duration_seconds);
+    if (duration) parts.push(duration);
+    const views = formatCount(item.view_count);
+    if (views != null) parts.push(`${views} views`);
+    const comments = formatCount(item.comment_count);
+    if (comments != null) parts.push(`${comments} comments`);
+    return parts.join(' · ');
+  }
 
   function renderAuthArea() {
     authArea.innerHTML = '';
@@ -1277,13 +1347,19 @@
           lastDateHeading = dateHeading;
         }
 
+        const timeOfDay = created.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+        const submeta = buildSubmeta(item);
+
         const card = document.createElement('div');
         card.className = 'history-card';
         card.innerHTML = `
+          ${item.title ? `<div class="history-card-title">${item.title.replace(/</g, '&lt;')}</div>` : ''}
           <div class="history-card-meta">
             <span class="video-id mono">${item.video_id}</span>
             <span class="category-pill mono">${item.category}</span>
+            <span class="history-card-time mono">${timeOfDay}</span>
           </div>
+          ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}</div>
         `;
         historyList.appendChild(card);
@@ -1344,6 +1420,8 @@
 
       videoId.textContent = data.video_id;
       categoryPill.textContent = data.category || '';
+      resultTitle.textContent = data.title || '';
+      resultSubmeta.textContent = buildSubmeta(data);
       summaryText.textContent = data.summary;
       result.classList.add('visible');
 

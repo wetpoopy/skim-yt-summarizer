@@ -8,7 +8,7 @@ dev when DATABASE_URL isn't set.
 
 import os
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./dev.db")
@@ -29,10 +29,28 @@ class Base(DeclarativeBase):
     pass
 
 
+def _ensure_columns() -> None:
+    """
+    Additive-only, no-framework migration: create_all() only creates
+    missing tables, not missing columns on tables that already exist
+    (e.g. the live Postgres 'summaries' table gaining new fields).
+    """
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.tables.values():
+            existing_columns = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing_columns:
+                    continue
+                col_type = column.type.compile(dialect=engine.dialect)
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}"))
+
+
 def init_db() -> None:
     from app import models  # noqa: F401 — register models on Base before create_all
 
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
 
 
 def get_db() -> Session:

@@ -49,4 +49,10 @@ class Summary(Base):
     language: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     user: Mapped["User"] = relationship(back_populates="summaries")
