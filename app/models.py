@@ -23,6 +23,7 @@ class User(Base):
     summary_length: Mapped[str | None] = mapped_column(String(16), nullable=True)
     summary_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ai_provider: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    digest_email_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     summaries: Mapped[list["Summary"]] = relationship(back_populates="user")
     api_tokens: Mapped[list["ApiToken"]] = relationship(back_populates="user")

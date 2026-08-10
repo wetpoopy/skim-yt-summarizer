@@ -88,12 +88,14 @@ class PreferencesOut(BaseModel):
     summary_length: Literal["brief", "standard", "detailed"]
     summary_format: Literal["bullets", "prose", "mixed"]
     ai_provider: Literal["anthropic", "openai", "gemini"]
+    digest_email_enabled: bool
 
 
 class PreferencesUpdate(BaseModel):
     summary_length: Literal["brief", "standard", "detailed"]
     summary_format: Literal["bullets", "prose", "mixed"]
     ai_provider: Literal["anthropic", "openai", "gemini"]
+    digest_email_enabled: bool
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -280,6 +282,7 @@ def get_preferences(user: User = Depends(require_user)):
         summary_length=user.summary_length or "standard",
         summary_format=user.summary_format or "mixed",
         ai_provider=user.ai_provider or "anthropic",
+        digest_email_enabled=user.digest_email_enabled is not False,
     )
 
 
@@ -290,11 +293,13 @@ def update_preferences(
     user.summary_length = body.summary_length
     user.summary_format = body.summary_format
     user.ai_provider = body.ai_provider
+    user.digest_email_enabled = body.digest_email_enabled
     db.commit()
     return PreferencesOut(
         summary_length=user.summary_length,
         summary_format=user.summary_format,
         ai_provider=user.ai_provider,
+        digest_email_enabled=user.digest_email_enabled is not False,
     )
 
 

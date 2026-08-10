@@ -28,8 +28,12 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from app.auth import get_current_user, require_user, router as auth_router
-from app.db import get_db, init_db
+from app.db import SessionLocal, get_db, init_db
+from app.digest import send_daily_digests
 from app.models import Summary, User
 from app.transcript import get_transcript, TranscriptError
 from app.summarizer import summarize, SummarizerError
@@ -39,10 +43,23 @@ from app.youtube_comments import get_top_comments
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
 
+_scheduler = BackgroundScheduler()
+
+
+def _run_daily_digests():
+    db = SessionLocal()
+    try:
+        send_daily_digests(db)
+    finally:
+        db.close()
+
 
 @app.on_event("startup")
 def _on_startup():
     init_db()
+    if not _scheduler.running:
+        _scheduler.add_job(_run_daily_digests, CronTrigger(hour=13, minute=0), id="daily_digest", replace_existing=True)
+        _scheduler.start()
 
 
 # Wide open for MVP; tighten to your actual frontend domain before you
@@ -136,9 +153,13 @@ def summarize_video(
 ):
     remaining = None
 
-    # Bring-your-own-key callers skip the shared rate limit entirely.
+    # Bring-your-own-key callers and logged-in users skip the shared rate
+    # limit — it exists to cap cost exposure from anonymous visitors, not
+    # to throttle the account owner's own usage.
     if x_anthropic_key:
         client = Anthropic(api_key=x_anthropic_key)
+    elif user is not None:
+        client = None  # summarize() will build the server's own client
     else:
         client_ip = request.client.host if request.client else "unknown"
         allowed, remaining = check_and_record(client_ip, FREE_TIER_DAILY_LIMIT)
@@ -264,6 +285,7 @@ def get_history(
     date_filter: date | None = Query(default=None, alias="date"),
     category: str | None = None,
     status: Literal["unread", "read", "archived"] = "unread",
+    q: str | None = None,
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
@@ -281,6 +303,11 @@ def get_history(
         query = query.where(Summary.created_at >= day_start, Summary.created_at <= day_end)
     if category:
         query = query.where(Summary.category == category)
+    if q:
+        like = f"%{q}%"
+        query = query.where(
+            Summary.title.ilike(like) | Summary.summary_text.ilike(like) | Summary.channel.ilike(like)
+        )
     query = query.order_by(Summary.created_at.desc())
 
     rows = db.scalars(query).all()

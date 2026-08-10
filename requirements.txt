@@ -11,3 +11,5 @@ pyjwt==2.*
 bcrypt==4.*
 openai==1.*
 google-genai==1.*
+redis==5.*
+apscheduler==3.*

@@ -649,6 +649,18 @@
 
   .preferences-row select:focus { border-color: var(--amber); }
 
+  .digest-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--slate);
+    margin-top: 12px;
+    cursor: pointer;
+  }
+
+  .digest-toggle input { accent-color: var(--amber); width: 15px; height: 15px; cursor: pointer; }
+
   .confirm-input {
     flex: 1;
     background: var(--ink);
@@ -1049,6 +1061,7 @@
     </div>
 
     <div class="history-filters">
+      <input type="search" id="searchFilter" class="mono" placeholder="Search title, summary, channel…">
       <input type="date" id="dateFilter" class="mono">
       <select id="categoryFilter" class="mono">
         <option value="">All categories</option>
@@ -1112,6 +1125,10 @@
           </select>
           <button class="link-btn mono" id="savePrefsBtn">SAVE</button>
         </div>
+        <label class="digest-toggle mono">
+          <input type="checkbox" id="prefDigestEmail">
+          Daily digest email
+        </label>
         <div class="action-row-status mono" id="prefsStatus"></div>
       </div>
 
@@ -1252,6 +1269,7 @@
   const mainView = document.getElementById('mainView');
   const historyView = document.getElementById('historyView');
   const backToMainBtn = document.getElementById('backToMainBtn');
+  const searchFilter = document.getElementById('searchFilter');
   const dateFilter = document.getElementById('dateFilter');
   const categoryFilter = document.getElementById('categoryFilter');
   const clearFiltersBtn = document.getElementById('clearFiltersBtn');
@@ -1625,6 +1643,7 @@
   const prefLength = document.getElementById('prefLength');
   const prefFormat = document.getElementById('prefFormat');
   const prefProvider = document.getElementById('prefProvider');
+  const prefDigestEmail = document.getElementById('prefDigestEmail');
   const savePrefsBtn = document.getElementById('savePrefsBtn');
   const prefsStatus = document.getElementById('prefsStatus');
 
@@ -1637,6 +1656,7 @@
       prefLength.value = prefs.summary_length;
       prefFormat.value = prefs.summary_format;
       prefProvider.value = prefs.ai_provider;
+      prefDigestEmail.checked = prefs.digest_email_enabled;
     } catch { /* leave selects at their defaults */ }
   }
 
@@ -1650,6 +1670,7 @@
           summary_length: prefLength.value,
           summary_format: prefFormat.value,
           ai_provider: prefProvider.value,
+          digest_email_enabled: prefDigestEmail.checked,
         }),
       });
       prefsStatus.textContent = res.ok ? 'Saved.' : 'Something went wrong — try again.';
@@ -1747,12 +1768,17 @@
 
   backToMainBtn.addEventListener('click', showMainView);
   clearFiltersBtn.addEventListener('click', () => {
+    searchFilter.value = '';
     dateFilter.value = '';
     categoryFilter.value = '';
     loadHistory();
   });
   dateFilter.addEventListener('change', loadHistory);
   categoryFilter.addEventListener('change', loadHistory);
+  searchFilter.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadHistory();
+  });
+  searchFilter.addEventListener('blur', loadHistory);
 
   async function loadCategories() {
     try {
@@ -1826,6 +1852,7 @@
     params.set('status', currentStatusTab);
     if (dateFilter.value) params.set('date', dateFilter.value);
     if (categoryFilter.value) params.set('category', categoryFilter.value);
+    if (searchFilter.value.trim()) params.set('q', searchFilter.value.trim());
 
     historyList.innerHTML = '';
     historyEmpty.classList.remove('visible');
