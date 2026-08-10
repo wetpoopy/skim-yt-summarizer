@@ -12,11 +12,11 @@ import bcrypt
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ApiToken, User
+from app.models import ApiToken, Summary, User
 
 TOKEN_PREFIX = "skim_"
 
@@ -192,6 +192,17 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut | None)
 def me(user: User | None = Depends(get_current_user)):
     return UserOut(email=user.email) if user else None
+
+
+@router.delete("/account")
+def delete_account(response: Response, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    db.execute(delete(Summary).where(Summary.user_id == user.id))
+    db.execute(delete(ApiToken).where(ApiToken.user_id == user.id))
+    db.delete(user)
+    db.commit()
+
+    response.delete_cookie(SESSION_COOKIE)
+    return {"ok": True}
 
 
 @router.post("/tokens", response_model=TokenCreatedOut)

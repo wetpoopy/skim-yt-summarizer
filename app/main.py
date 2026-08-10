@@ -12,15 +12,20 @@ in via the optional x-anthropic-key header — if present, it bypasses
 the rate limit and uses the caller's own key.
 """
 
+import csv
+import io
+import json
 from datetime import date, datetime, time, timezone
 from pathlib import Path
+from typing import Literal
 
 from anthropic import Anthropic
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_user, router as auth_router
@@ -183,6 +188,77 @@ def get_history_categories(user: User = Depends(require_user), db: Session = Dep
         select(Summary.category).where(Summary.user_id == user.id).distinct()
     ).all()
     return sorted(rows)
+
+
+@app.get("/history/export")
+def export_history(
+    format: Literal["json", "csv", "markdown"] = "json",
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.scalars(
+        select(Summary).where(Summary.user_id == user.id).order_by(Summary.created_at.desc())
+    ).all()
+
+    if format == "json":
+        content = json.dumps(
+            [
+                {
+                    "video_id": r.video_id,
+                    "url": r.url,
+                    "category": r.category,
+                    "language": r.language,
+                    "summary": r.summary_text,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in rows
+            ],
+            indent=2,
+        )
+        media_type = "application/json"
+        filename = "skim-history.json"
+
+    elif format == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["created_at", "video_id", "category", "language", "url", "summary"])
+        for r in rows:
+            writer.writerow(
+                [r.created_at.isoformat(), r.video_id, r.category, r.language, r.url, r.summary_text]
+            )
+        content = buf.getvalue()
+        media_type = "text/csv"
+        filename = "skim-history.csv"
+
+    else:
+        lines = ["# Skim history", ""]
+        last_date = None
+        for r in rows:
+            day = r.created_at.date().isoformat()
+            if day != last_date:
+                lines.append(f"## {day}")
+                lines.append("")
+                last_date = day
+            lines.append(f"**{r.video_id}** · {r.category} · [{r.url}]({r.url})")
+            lines.append("")
+            lines.append(r.summary_text)
+            lines.append("")
+        content = "\n".join(lines)
+        media_type = "text/markdown"
+        filename = "skim-history.md"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.delete("/history")
+def delete_all_history(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    result = db.execute(delete(Summary).where(Summary.user_id == user.id))
+    db.commit()
+    return {"deleted": result.rowcount}
 
 
 # Mounted last and at "/" so it only catches requests that don't match

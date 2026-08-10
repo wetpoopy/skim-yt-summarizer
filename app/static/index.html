@@ -383,6 +383,93 @@
 
   .token-empty.visible { display: block; }
 
+  /* ---------- actions modal ---------- */
+  .actions-modal-card { max-width: 460px; }
+
+  .action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .action-row:last-child { border-bottom: none; }
+
+  .action-row-stack {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-row-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .action-row-desc {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 3px;
+  }
+
+  .export-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .export-btn-row a { text-decoration: none; }
+
+  .danger-row .action-row-title { color: var(--danger); }
+
+  .confirm-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .confirm-input {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-size: 12px;
+    padding: 9px 12px;
+    outline: none;
+  }
+
+  .confirm-input:focus { border-color: var(--danger); }
+
+  .danger-btn {
+    background: transparent;
+    border: 1px solid rgba(229, 72, 77, 0.4);
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 0 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .danger-btn:not(:disabled):hover { background: rgba(229, 72, 77, 0.1); }
+
+  .danger-btn:disabled {
+    border-color: var(--line);
+    color: var(--slate);
+    cursor: not-allowed;
+    background: transparent;
+  }
+
+  .action-row-status {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 8px;
+  }
+
   /* ---------- hero ---------- */
   .hero {
     width: 100%;
@@ -643,6 +730,8 @@
     .history-filters { flex-direction: column; }
     .create-token-row { flex-direction: column; }
     .token-value-row { flex-direction: column; align-items: stretch; }
+    .export-btn-row { flex-wrap: wrap; }
+    .confirm-row { flex-direction: column; align-items: stretch; }
   }
 </style>
 </head>
@@ -744,6 +833,61 @@
     </div>
   </div>
 
+  <div class="modal-overlay hidden" id="actionsModal">
+    <div class="modal-card actions-modal-card">
+      <button class="modal-close" id="actionsModalClose">&times;</button>
+      <h2>Actions</h2>
+
+      <div class="action-row">
+        <div>
+          <div class="action-row-title">API tokens</div>
+          <div class="action-row-desc mono">For Shortcuts, scripts, etc.</div>
+        </div>
+        <button class="link-btn mono" id="openTokensBtn">MANAGE</button>
+      </div>
+
+      <div class="action-row action-row-stack">
+        <div>
+          <div class="action-row-title">Export history</div>
+          <div class="action-row-desc mono">Download everything you've saved.</div>
+        </div>
+        <div class="export-btn-row">
+          <a class="link-btn mono" href="/history/export?format=json" download>JSON</a>
+          <a class="link-btn mono" href="/history/export?format=csv" download>CSV</a>
+          <a class="link-btn mono" href="/history/export?format=markdown" download>MARKDOWN</a>
+        </div>
+      </div>
+
+      <div class="action-row action-row-stack danger-row">
+        <div>
+          <div class="action-row-title">Delete all history</div>
+          <div class="action-row-desc mono">Keeps your account, erases every saved summary. Can't be undone.</div>
+        </div>
+        <div class="confirm-row">
+          <input type="text" class="confirm-input mono" id="deleteHistoryConfirmInput" placeholder="Type DELETE">
+          <button class="danger-btn mono" id="deleteHistoryBtn" disabled>DELETE HISTORY</button>
+        </div>
+        <div class="action-row-status mono" id="deleteHistoryStatus"></div>
+      </div>
+
+      <div class="action-row action-row-stack danger-row">
+        <div>
+          <div class="action-row-title">Delete account</div>
+          <div class="action-row-desc mono">Erases your account, history, and tokens. Can't be undone.</div>
+        </div>
+        <div class="confirm-row">
+          <input type="text" class="confirm-input mono" id="deleteAccountConfirmInput" placeholder="Type DELETE">
+          <button class="danger-btn mono" id="deleteAccountBtn" disabled>DELETE ACCOUNT</button>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <div class="action-row-title">Log out</div>
+        <button class="link-btn mono" id="actionsLogoutBtn">LOG OUT</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay hidden" id="authModal">
     <div class="modal-card">
       <button class="modal-close" id="authModalClose">&times;</button>
@@ -815,15 +959,11 @@
       historyBtn.textContent = 'HISTORY';
       historyBtn.addEventListener('click', showHistoryView);
 
-      const tokensBtn = document.createElement('button');
-      tokensBtn.textContent = 'TOKENS';
-      tokensBtn.addEventListener('click', openTokenModal);
+      const actionsBtn = document.createElement('button');
+      actionsBtn.textContent = 'ACTIONS';
+      actionsBtn.addEventListener('click', openActionsModal);
 
-      const logoutBtn = document.createElement('button');
-      logoutBtn.textContent = 'LOG OUT';
-      logoutBtn.addEventListener('click', logout);
-
-      authArea.append(email, historyBtn, tokensBtn, logoutBtn);
+      authArea.append(email, historyBtn, actionsBtn);
     } else {
       const signInBtn = document.createElement('button');
       signInBtn.textContent = 'SIGN IN';
@@ -993,6 +1133,82 @@
       }
     } catch { /* leave list empty */ }
   }
+
+  // ---------- actions panel ----------
+  const actionsModal = document.getElementById('actionsModal');
+  const actionsModalClose = document.getElementById('actionsModalClose');
+  const openTokensBtn = document.getElementById('openTokensBtn');
+  const actionsLogoutBtn = document.getElementById('actionsLogoutBtn');
+  const deleteHistoryConfirmInput = document.getElementById('deleteHistoryConfirmInput');
+  const deleteHistoryBtn = document.getElementById('deleteHistoryBtn');
+  const deleteHistoryStatus = document.getElementById('deleteHistoryStatus');
+  const deleteAccountConfirmInput = document.getElementById('deleteAccountConfirmInput');
+  const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+
+  function openActionsModal() {
+    deleteHistoryConfirmInput.value = '';
+    deleteAccountConfirmInput.value = '';
+    deleteHistoryBtn.disabled = true;
+    deleteAccountBtn.disabled = true;
+    deleteHistoryStatus.textContent = '';
+    actionsModal.classList.remove('hidden');
+  }
+
+  function closeActionsModal() {
+    actionsModal.classList.add('hidden');
+  }
+
+  actionsModalClose.addEventListener('click', closeActionsModal);
+  actionsModal.addEventListener('click', (e) => {
+    if (e.target === actionsModal) closeActionsModal();
+  });
+
+  openTokensBtn.addEventListener('click', () => {
+    closeActionsModal();
+    openTokenModal();
+  });
+
+  actionsLogoutBtn.addEventListener('click', () => {
+    closeActionsModal();
+    logout();
+  });
+
+  deleteHistoryConfirmInput.addEventListener('input', () => {
+    deleteHistoryBtn.disabled = deleteHistoryConfirmInput.value !== 'DELETE';
+  });
+
+  deleteAccountConfirmInput.addEventListener('input', () => {
+    deleteAccountBtn.disabled = deleteAccountConfirmInput.value !== 'DELETE';
+  });
+
+  deleteHistoryBtn.addEventListener('click', async () => {
+    deleteHistoryBtn.disabled = true;
+    try {
+      const res = await fetch('/history', { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      deleteHistoryStatus.textContent = `Deleted ${data.deleted} saved summar${data.deleted === 1 ? 'y' : 'ies'}.`;
+      deleteHistoryConfirmInput.value = '';
+      if (!historyView.classList.contains('hidden')) loadHistory();
+    } catch {
+      deleteHistoryStatus.textContent = 'Something went wrong — try again.';
+      deleteHistoryBtn.disabled = false;
+    }
+  });
+
+  deleteAccountBtn.addEventListener('click', async () => {
+    deleteAccountBtn.disabled = true;
+    try {
+      const res = await fetch('/auth/account', { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      currentUser = null;
+      renderAuthArea();
+      closeActionsModal();
+      showMainView();
+    } catch {
+      deleteAccountBtn.disabled = false;
+    }
+  });
 
   // ---------- history view ----------
   function showMainView() {
