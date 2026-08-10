@@ -66,6 +66,11 @@ class UserOut(BaseModel):
     email: str
 
 
+class MobileAuthOut(BaseModel):
+    email: str
+    token: str
+
+
 class CreateTokenRequest(BaseModel):
     label: str = ""
 
@@ -146,6 +151,21 @@ def _user_from_bearer_token(request: Request, db: Session) -> User | None:
     if not raw_token:
         return None
 
+    # The mobile app has no cookie jar, so it sends the same session JWT
+    # normally kept in the httpOnly cookie via this header instead. Try
+    # that first (cheap, no DB hit), then fall back to a personal API
+    # token (skim_... prefixed, used by Shortcuts/scripts).
+    if JWT_SECRET:
+        try:
+            payload = jwt.decode(raw_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id:
+                user = db.get(User, int(user_id))
+                if user:
+                    return user
+        except jwt.PyJWTError:
+            pass
+
     api_token = db.scalar(select(ApiToken).where(ApiToken.token_hash == _hash_token(raw_token)))
     if not api_token:
         return None
@@ -155,7 +175,12 @@ def _user_from_bearer_token(request: Request, db: Session) -> User | None:
     return db.get(User, api_token.user_id)
 
 
-def _set_session_cookie(response: Response, user_id: int) -> None:
+def _set_session_cookie(response: Response, user_id: int) -> str:
+    """
+    Sets the httpOnly cookie session used by the web frontend, and returns
+    the raw token too — the mobile app has no cookie jar, so it stores this
+    value itself and sends it back as `Authorization: Bearer <token>`.
+    """
     token = _issue_token(user_id)
     response.set_cookie(
         key=SESSION_COOKIE,
@@ -165,6 +190,7 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
         secure=IS_PRODUCTION,
         samesite="lax",
     )
+    return token
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User | None:
@@ -195,7 +221,7 @@ def require_user(user: User | None = Depends(get_current_user)) -> User:
     return user
 
 
-@router.post("/signup", response_model=UserOut)
+@router.post("/signup", response_model=MobileAuthOut)
 def signup(body: SignupRequest, response: Response, db: Session = Depends(get_db)):
     _require_jwt_secret()
     existing = db.scalar(select(User).where(User.email == body.email))
@@ -207,19 +233,19 @@ def signup(body: SignupRequest, response: Response, db: Session = Depends(get_db
     db.commit()
     db.refresh(user)
 
-    _set_session_cookie(response, user.id)
-    return UserOut(email=user.email)
+    token = _set_session_cookie(response, user.id)
+    return MobileAuthOut(email=user.email, token=token)
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/login", response_model=MobileAuthOut)
 def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     _require_jwt_secret()
     user = db.scalar(select(User).where(User.email == body.email))
     if not user or not _verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
-    _set_session_cookie(response, user.id)
-    return UserOut(email=user.email)
+    token = _set_session_cookie(response, user.id)
+    return MobileAuthOut(email=user.email, token=token)
 
 
 @router.post("/logout")
