@@ -36,7 +36,7 @@ from app.db import SessionLocal, get_db, init_db
 from app.digest import send_daily_digests
 from app.models import Summary, User
 from app.transcript import get_transcript, TranscriptError
-from app.summarizer import summarize, SummarizerError
+from app.summarizer import summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
 from app.youtube_comments import get_top_comments
@@ -223,6 +223,8 @@ def summarize_video(
             provider=provider,
             transcript_segments=transcript_data.get("segments"),
         )
+    except QuotaExceededError as e:
+        raise HTTPException(status_code=429, detail=str(e))
     except SummarizerError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

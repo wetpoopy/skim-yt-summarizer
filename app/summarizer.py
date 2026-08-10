@@ -22,6 +22,37 @@ class SummarizerError(Exception):
     pass
 
 
+class QuotaExceededError(SummarizerError):
+    """Raised when a provider rejects the call for hitting a rate/quota
+    limit — distinct from other failures so callers can stop a batch run
+    instead of burning through the rest of it against the same wall."""
+    pass
+
+
+PROVIDER_LABELS = {"anthropic": "Claude", "openai": "GPT", "gemini": "Gemini"}
+PROVIDER_BILLING_URLS = {
+    "anthropic": "console.anthropic.com/settings/billing",
+    "openai": "platform.openai.com/account/billing",
+    "gemini": "ai.google.dev",
+}
+
+
+def _is_quota_error(e: Exception) -> bool:
+    if getattr(e, "status_code", None) == 429 or getattr(e, "code", None) == 429:
+        return True
+    text = str(e).lower()
+    return any(
+        marker in text
+        for marker in ("resource_exhausted", "rate_limit", "quota", "429", "insufficient_quota")
+    )
+
+
+def _quota_error(provider: str) -> QuotaExceededError:
+    label = PROVIDER_LABELS.get(provider, provider)
+    billing = PROVIDER_BILLING_URLS.get(provider, "")
+    return QuotaExceededError(f"{label} is out of quota right now. Try a different model, or check billing at {billing}.")
+
+
 # ---------- provider dispatch ----------
 
 def _call_anthropic(prompt: str, client: Anthropic | None = None) -> str:
@@ -39,6 +70,8 @@ def _call_anthropic(prompt: str, client: Anthropic | None = None) -> str:
         blocks = [b.text for b in response.content if b.type == "text"]
         return "\n".join(blocks).strip()
     except Exception as e:
+        if _is_quota_error(e):
+            raise _quota_error("anthropic")
         raise SummarizerError(f"Anthropic call failed ({e.__class__.__name__}): {e}")
 
 
@@ -58,6 +91,8 @@ def _call_openai(prompt: str) -> str:
     except SummarizerError:
         raise
     except Exception as e:
+        if _is_quota_error(e):
+            raise _quota_error("openai")
         raise SummarizerError(f"OpenAI call failed ({e.__class__.__name__}): {e}")
 
 
@@ -73,6 +108,8 @@ def _call_gemini(prompt: str) -> str:
     except SummarizerError:
         raise
     except Exception as e:
+        if _is_quota_error(e):
+            raise _quota_error("gemini")
         raise SummarizerError(f"Gemini call failed ({e.__class__.__name__}): {e}")
 
 

@@ -747,6 +747,23 @@
 
   .batch-progress-row.failed .batch-progress-status { color: var(--danger); }
 
+  .batch-progress-row.skipped { opacity: 0.5; }
+
+  .batch-progress-row.skipped .batch-progress-status { color: var(--slate); }
+
+  .batch-quota-banner {
+    background: rgba(229, 72, 77, 0.08);
+    border: 1px solid rgba(229, 72, 77, 0.3);
+    border-radius: 8px;
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+
+  .batch-quota-banner.hidden { display: none; }
+
   .playlist-badge {
     font-size: 11px;
     color: var(--slate);
@@ -2109,8 +2126,10 @@
 
   const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' };
   let batchPreviewData = null;
+  let batchRunToken = 0;
 
   function closeBatchModal() {
+    batchRunToken++; // invalidate any in-flight run loop so it stops after its current request
     batchModal.classList.add('hidden');
   }
 
@@ -2182,17 +2201,22 @@
     const provider = batchProviderSelect.value;
     const playlistId = batchPreviewData.playlist_id;
     const playlistTitle = batchPreviewData.playlist_title;
+    const myRunToken = ++batchRunToken; // this run is invalidated if the modal is closed mid-run
 
     batchConfirmScreen.classList.add('hidden');
     batchProgressList.classList.remove('hidden');
-    batchProgressList.innerHTML = selected.map((v, i) => `
+    batchProgressList.innerHTML = `<div class="batch-quota-banner hidden" id="batchQuotaBanner"></div>` +
+      selected.map((v, i) => `
       <div class="batch-progress-row" id="batchRow${i}">
         <div class="batch-progress-status mono">queued</div>
         <span>${escapeHtml(v.title || v.video_id)}</span>
       </div>
     `).join('');
+    const quotaBanner = document.getElementById('batchQuotaBanner');
 
     for (let i = 0; i < selected.length; i++) {
+      if (myRunToken !== batchRunToken) return; // modal was closed / a new run started — stop here
+
       const row = document.getElementById(`batchRow${i}`);
       const statusEl = row.querySelector('.batch-progress-status');
       statusEl.textContent = 'summarizing…';
@@ -2207,11 +2231,28 @@
             provider,
           }),
         });
+        if (myRunToken !== batchRunToken) return;
         const data = await res.json();
+
+        if (res.status === 429) {
+          // Out of quota — abort the rest of the batch rather than burning through it against the same wall.
+          row.classList.add('failed');
+          statusEl.textContent = '✗ out of quota';
+          quotaBanner.textContent = `⚠ ${data.detail || 'Ran out of quota — stopped early.'}`;
+          quotaBanner.classList.remove('hidden');
+          for (let j = i + 1; j < selected.length; j++) {
+            const skippedRow = document.getElementById(`batchRow${j}`);
+            skippedRow.classList.add('skipped');
+            skippedRow.querySelector('.batch-progress-status').textContent = 'skipped';
+          }
+          break;
+        }
+
         if (!res.ok) throw new Error(data.detail || 'Failed');
         row.classList.add('done');
         statusEl.textContent = '✓ done';
       } catch (err) {
+        if (myRunToken !== batchRunToken) return;
         row.classList.add('failed');
         statusEl.textContent = `✗ ${err.message || 'failed'}`;
       }
