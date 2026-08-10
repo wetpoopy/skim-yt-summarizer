@@ -7,6 +7,7 @@ it reads the caption tracks YouTube already serves).
 
 import os
 import re
+import time
 from typing import Optional
 
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -18,6 +19,13 @@ from youtube_transcript_api._errors import (
     IpBlocked,
     RequestBlocked,
 )
+
+# The residential proxy rotates IPs per request, so a failed attempt is
+# often just a bad-luck IP — retrying gives it fresh ones. Only transient
+# failures (blocked/network) are retried; deterministic ones (disabled,
+# unavailable, no captions) fail fast since retrying won't change them.
+MAX_TRANSCRIPT_ATTEMPTS = 6
+RETRY_BACKOFF_SECONDS = [1, 2, 4, 8, 16]
 
 
 class TranscriptError(Exception):
@@ -69,9 +77,50 @@ def extract_video_id(url: str) -> str:
     raise TranscriptError("Couldn't find a valid YouTube video ID in that URL.")
 
 
+def _fetch_transcript_once(video_id: str, languages: list[str]) -> dict:
+    """One attempt at fetching the transcript. Raises the underlying
+    youtube_transcript_api exceptions (or TranscriptError) untranslated —
+    get_transcript() decides what's worth retrying."""
+    api = _build_api()
+    transcript_list = api.list(video_id)
+
+    # Prefer a manually created transcript in the requested languages,
+    # fall back to auto-generated, fall back to translating whatever exists.
+    try:
+        transcript = transcript_list.find_transcript(languages)
+    except NoTranscriptFound:
+        try:
+            transcript = transcript_list.find_generated_transcript(languages)
+        except NoTranscriptFound:
+            # last resort: grab the first available transcript and translate it
+            available = next(iter(transcript_list), None)
+            if available is None:
+                raise
+            transcript = available.translate("en") if available.is_translatable else available
+
+    fetched = transcript.fetch()  # FetchedTranscript: iterable of snippets w/ .text/.start/.duration
+    snippets = [s for s in fetched if s.text.strip()]
+    full_text = " ".join(s.text.strip() for s in snippets)
+    duration = (snippets[-1].start + snippets[-1].duration) if snippets else 0
+
+    if not full_text:
+        raise TranscriptError("This video's transcript came back empty.")
+
+    return {
+        "video_id": video_id,
+        "text": full_text,
+        "duration_seconds": duration,
+        "language": transcript.language_code,
+    }
+
+
 def get_transcript(url: str, languages: Optional[list[str]] = None) -> dict:
     """
-    Fetch the transcript for a YouTube URL.
+    Fetch the transcript for a YouTube URL, retrying transient failures
+    (proxy/IP blocks, network hiccups) since the rotating proxy often
+    just needs a fresh IP. Deterministic failures (captions disabled,
+    video unavailable, no transcript in any language) fail immediately —
+    retrying them can't change the outcome.
 
     Returns:
         {
@@ -83,58 +132,33 @@ def get_transcript(url: str, languages: Optional[list[str]] = None) -> dict:
 
     Raises:
         TranscriptError with a human-readable reason if no transcript
-        is available (disabled, video unavailable, no captions in any
-        requested language, etc).
+        could be retrieved after all attempts.
     """
     video_id = extract_video_id(url)
     languages = languages or ["en", "en-US", "en-GB"]
 
-    try:
-        api = _build_api()
-        transcript_list = api.list(video_id)
-
-        # Prefer a manually created transcript in the requested languages,
-        # fall back to auto-generated, fall back to translating whatever exists.
+    last_error: TranscriptError | None = None
+    for attempt in range(MAX_TRANSCRIPT_ATTEMPTS):
         try:
-            transcript = transcript_list.find_transcript(languages)
+            return _fetch_transcript_once(video_id, languages)
+        except TranscriptsDisabled:
+            raise TranscriptError("Captions are disabled for this video.")
+        except VideoUnavailable:
+            raise TranscriptError("This video is unavailable (private, deleted, or region-locked).")
         except NoTranscriptFound:
-            try:
-                transcript = transcript_list.find_generated_transcript(languages)
-            except NoTranscriptFound:
-                # last resort: grab the first available transcript and translate it
-                available = next(iter(transcript_list), None)
-                if available is None:
-                    raise
-                transcript = available.translate("en") if available.is_translatable else available
+            raise TranscriptError("No transcript/captions found for this video in any language.")
+        except (IpBlocked, RequestBlocked):
+            last_error = TranscriptError(
+                "YouTube is blocking requests from this server's IP. This is common on "
+                "cloud hosting — set WEBSHARE_PROXY_USERNAME/PASSWORD to route through "
+                "a residential proxy."
+            )
+        except TranscriptError as e:
+            last_error = e
+        except Exception as e:
+            last_error = TranscriptError(f"Couldn't retrieve a transcript for this video ({e.__class__.__name__}).")
 
-        fetched = transcript.fetch()  # FetchedTranscript: iterable of snippets w/ .text/.start/.duration
-        snippets = [s for s in fetched if s.text.strip()]
-        full_text = " ".join(s.text.strip() for s in snippets)
-        duration = (snippets[-1].start + snippets[-1].duration) if snippets else 0
+        if attempt < MAX_TRANSCRIPT_ATTEMPTS - 1:
+            time.sleep(RETRY_BACKOFF_SECONDS[attempt])
 
-        if not full_text:
-            raise TranscriptError("This video's transcript came back empty.")
-
-        return {
-            "video_id": video_id,
-            "text": full_text,
-            "duration_seconds": duration,
-            "language": transcript.language_code,
-        }
-
-    except TranscriptsDisabled:
-        raise TranscriptError("Captions are disabled for this video.")
-    except VideoUnavailable:
-        raise TranscriptError("This video is unavailable (private, deleted, or region-locked).")
-    except NoTranscriptFound:
-        raise TranscriptError("No transcript/captions found for this video in any language.")
-    except (IpBlocked, RequestBlocked):
-        raise TranscriptError(
-            "YouTube is blocking requests from this server's IP. This is common on "
-            "cloud hosting — set WEBSHARE_PROXY_USERNAME/PASSWORD to route through "
-            "a residential proxy."
-        )
-    except TranscriptError:
-        raise
-    except Exception as e:
-        raise TranscriptError(f"Couldn't retrieve a transcript for this video ({e.__class__.__name__}).")
+    raise last_error
