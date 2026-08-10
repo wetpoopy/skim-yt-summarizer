@@ -172,6 +172,26 @@
     margin-bottom: 8px;
   }
 
+  .history-card-title a, .result-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .history-card-title a:hover, .result-title a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--amber);
+  }
+
+  .history-card-submeta a, .result-submeta a {
+    color: var(--slate);
+    text-decoration: none;
+  }
+
+  .history-card-submeta a:hover, .result-submeta a:hover {
+    color: var(--amber);
+    text-decoration: underline;
+  }
+
   .history-card-meta {
     display: flex;
     align-items: center;
@@ -186,18 +206,19 @@
   }
 
   .history-card-toggle {
-    background: transparent;
-    border: 1px solid var(--line);
-    color: var(--slate);
-    font-size: 10px;
+    background: var(--amber);
+    border: none;
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 12px;
     letter-spacing: 0.04em;
-    padding: 4px 10px;
-    border-radius: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
     cursor: pointer;
     white-space: nowrap;
   }
 
-  .history-card-toggle:hover { background: var(--line); color: var(--paper); }
+  .history-card-toggle:hover { background: #FFC04D; }
 
   .history-card-submeta {
     font-size: 11px;
@@ -1036,9 +1057,31 @@
     return String(n);
   }
 
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function watchUrl(item) {
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(item.video_id)}`;
+  }
+
+  function titleLinkHtml(item) {
+    if (!item.title) return '';
+    return `<a href="${watchUrl(item)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>`;
+  }
+
   function buildSubmeta(item) {
     const parts = [];
-    if (item.channel) parts.push(item.channel);
+    if (item.channel) {
+      const channelText = escapeHtml(item.channel);
+      parts.push(
+        item.channel_id
+          ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelText}</a>`
+          : channelText
+      );
+    }
     const duration = formatDuration(item.duration_seconds);
     if (duration) parts.push(duration);
     const views = formatCount(item.view_count);
@@ -1384,7 +1427,7 @@
         card.className = 'history-card';
         card.innerHTML = `
           <div class="history-card-header">
-            ${item.title ? `<div class="history-card-title">${item.title.replace(/</g, '&lt;')}</div>` : ''}
+            ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : ''}
             <div class="history-card-meta">
               <span class="category-pill mono">${item.category}</span>
               <span class="history-card-time mono">${timeOfDay}</span>
@@ -1459,8 +1502,8 @@
 
       videoId.textContent = data.video_id;
       categoryPill.textContent = data.category || '';
-      resultTitle.textContent = data.title || '';
-      resultSubmeta.textContent = buildSubmeta(data);
+      resultTitle.innerHTML = titleLinkHtml(data);
+      resultSubmeta.innerHTML = buildSubmeta(data);
       summaryText.textContent = data.summary;
       result.classList.add('visible');
 

@@ -76,6 +76,7 @@ class SummarizeResponse(BaseModel):
     saved: bool = False
     title: str | None = None
     channel: str | None = None
+    channel_id: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
     duration_seconds: int | None = None
@@ -91,6 +92,7 @@ class HistoryItem(BaseModel):
     created_at: datetime
     title: str | None = None
     channel: str | None = None
+    channel_id: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
     duration_seconds: int | None = None
@@ -151,6 +153,7 @@ def summarize_video(
             language=transcript_data["language"],
             title=metadata.get("title"),
             channel=metadata.get("channel"),
+            channel_id=metadata.get("channel_id"),
             view_count=metadata.get("view_count"),
             comment_count=metadata.get("comment_count"),
             duration_seconds=metadata.get("duration_seconds"),
@@ -168,6 +171,7 @@ def summarize_video(
         saved=saved,
         title=metadata.get("title"),
         channel=metadata.get("channel"),
+        channel_id=metadata.get("channel_id"),
         view_count=metadata.get("view_count"),
         comment_count=metadata.get("comment_count"),
         duration_seconds=metadata.get("duration_seconds"),
@@ -202,6 +206,7 @@ def get_history(
             created_at=r.created_at,
             title=r.title,
             channel=r.channel,
+            channel_id=r.channel_id,
             view_count=r.view_count,
             comment_count=r.comment_count,
             duration_seconds=r.duration_seconds,
@@ -236,6 +241,7 @@ def export_history(
                     "url": r.url,
                     "title": r.title,
                     "channel": r.channel,
+                    "channel_id": r.channel_id,
                     "category": r.category,
                     "language": r.language,
                     "view_count": r.view_count,

@@ -51,6 +51,7 @@ class Summary(Base):
 
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
