@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Skim — turn videos into 20 seconds of reading</title>
+
+<!-- Home screen / PWA icon + full-screen (no Safari chrome) behavior -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Skim">
+<meta name="theme-color" content="#0B0E14">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -175,10 +185,24 @@
     margin-left: auto;
   }
 
+  .history-card-toggle {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .history-card-toggle:hover { background: var(--line); color: var(--paper); }
+
   .history-card-submeta {
     font-size: 11px;
     color: var(--slate);
-    margin: -4px 0 10px;
+    margin: -4px 0 0;
   }
 
   .history-date-heading {
@@ -197,7 +221,13 @@
     line-height: 1.6;
     color: var(--paper);
     white-space: pre-wrap;
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
   }
+
+  .history-card.expanded .history-card-summary { display: block; }
 
   .history-empty {
     color: var(--slate);
@@ -1353,15 +1383,24 @@
         const card = document.createElement('div');
         card.className = 'history-card';
         card.innerHTML = `
-          ${item.title ? `<div class="history-card-title">${item.title.replace(/</g, '&lt;')}</div>` : ''}
-          <div class="history-card-meta">
-            <span class="video-id mono">${item.video_id}</span>
-            <span class="category-pill mono">${item.category}</span>
-            <span class="history-card-time mono">${timeOfDay}</span>
+          <div class="history-card-header">
+            ${item.title ? `<div class="history-card-title">${item.title.replace(/</g, '&lt;')}</div>` : ''}
+            <div class="history-card-meta">
+              <span class="category-pill mono">${item.category}</span>
+              <span class="history-card-time mono">${timeOfDay}</span>
+              <button class="history-card-toggle mono">EXPAND ▾</button>
+            </div>
+            ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
-          ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}</div>
         `;
+
+        const toggleBtn = card.querySelector('.history-card-toggle');
+        toggleBtn.addEventListener('click', () => {
+          const expanded = card.classList.toggle('expanded');
+          toggleBtn.textContent = expanded ? 'COLLAPSE ▴' : 'EXPAND ▾';
+        });
+
         historyList.appendChild(card);
       }
     } catch { /* leave list empty */ }
