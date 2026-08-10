@@ -414,7 +414,7 @@ def export_history(
         filename = "skim-history.csv"
 
     else:
-        lines = ["# Skim history", ""]
+        lines = ["# TLDW history", ""]
         last_date = None
         for r in rows:
             day = r.created_at.date().isoformat()

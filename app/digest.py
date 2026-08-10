@@ -45,7 +45,7 @@ def send_daily_digests(db: Session) -> int:
         try:
             send_email(
                 to=user.email,
-                subject=f"Your Skim digest — {len(summaries)} video{'s' if len(summaries) != 1 else ''}",
+                subject=f"Your TLDW digest — {len(summaries)} video{'s' if len(summaries) != 1 else ''}",
                 text=_build_digest_text(summaries),
             )
             sent += 1

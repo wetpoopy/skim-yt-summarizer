@@ -11,7 +11,7 @@ import os
 import requests
 
 RESEND_API_URL = "https://api.resend.com/emails"
-FROM_ADDRESS = "Skim <noreply@skimstash.com>"
+FROM_ADDRESS = "TLDW <noreply@toolazydidntwatch.com>"
 
 
 class EmailSendError(Exception):
