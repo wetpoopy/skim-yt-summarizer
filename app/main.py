@@ -35,7 +35,7 @@ from app.auth import get_current_user, require_user, router as auth_router
 from app.db import SessionLocal, get_db, init_db
 from app.digest import send_daily_digests
 from app.models import Summary, User
-from app.transcript import get_transcript, TranscriptError
+from app.transcript import extract_video_id, get_transcript, TranscriptError
 from app.summarizer import summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
@@ -115,6 +115,7 @@ class SummarizeResponse(BaseModel):
     chapters: list[Chapter] = []
     playlist_id: str | None = None
     playlist_title: str | None = None
+    already_summarized: bool = False
 
 
 class HistoryItem(BaseModel):
@@ -151,6 +152,7 @@ class PlaylistVideo(BaseModel):
     title: str | None = None
     thumbnail_url: str | None = None
     duration_seconds: int | None = None
+    already_summarized: bool = False
 
 
 class PlaylistPreviewResponse(BaseModel):
@@ -163,6 +165,36 @@ class PlaylistPreviewResponse(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeResponse:
+    """Builds a SummarizeResponse from an already-saved Summary row, for
+    the dedup short-circuit — skips re-fetching the transcript/metadata
+    and re-running the AI call entirely for a video the user already has."""
+    chapters = json.loads(r.chapters_json) if r.chapters_json else []
+    return SummarizeResponse(
+        video_id=r.video_id,
+        summary=r.summary_text,
+        category=r.category,
+        language=r.language,
+        remaining_today=remaining,
+        saved=True,
+        title=r.title,
+        channel=r.channel,
+        channel_id=r.channel_id,
+        view_count=r.view_count,
+        comment_count=r.comment_count,
+        like_count=r.like_count,
+        duration_seconds=r.duration_seconds,
+        subscriber_count=r.subscriber_count,
+        sentiment_label=r.sentiment_label,
+        sentiment_blurb=r.sentiment_blurb,
+        title_answer=r.title_answer,
+        chapters=[Chapter(**c) for c in chapters],
+        playlist_id=r.playlist_id,
+        playlist_title=r.playlist_title,
+        already_summarized=True,
+    )
 
 
 @app.post("/summarize", response_model=SummarizeResponse)
@@ -195,6 +227,18 @@ def summarize_video(
                 ),
             )
         client = None  # summarize() will build the server's own client
+
+    if user is not None:
+        try:
+            existing_video_id = extract_video_id(body.url)
+        except TranscriptError:
+            existing_video_id = None
+        if existing_video_id:
+            existing = db.scalar(
+                select(Summary).where(Summary.user_id == user.id, Summary.video_id == existing_video_id)
+            )
+            if existing is not None:
+                return _summary_to_response(existing, remaining=remaining)
 
     try:
         transcript_data = get_transcript(body.url)
@@ -312,7 +356,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
 
 
 @app.get("/playlist/preview", response_model=PlaylistPreviewResponse)
-def playlist_preview(url: str, user: User = Depends(require_user)):
+def playlist_preview(url: str, user: User = Depends(require_user), db: Session = Depends(get_db)):
     playlist_id = extract_playlist_id(url)
     if not playlist_id:
         raise HTTPException(status_code=422, detail="That doesn't look like a playlist URL (no ?list= found).")
@@ -323,6 +367,17 @@ def playlist_preview(url: str, user: User = Depends(require_user)):
             status_code=502,
             detail="Couldn't load that playlist. It may be private, empty, or the server is missing YOUTUBE_API_KEY.",
         )
+
+    already_ids = set(
+        db.scalars(
+            select(Summary.video_id).where(
+                Summary.user_id == user.id,
+                Summary.video_id.in_([v["video_id"] for v in preview["videos"]]),
+            )
+        ).all()
+    )
+    for v in preview["videos"]:
+        v["already_summarized"] = v["video_id"] in already_ids
 
     estimated_cost = estimate_batch_cost(preview["videos"])
     return PlaylistPreviewResponse(

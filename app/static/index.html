@@ -772,6 +772,31 @@
     padding: 2px 8px;
   }
 
+  .already-badge {
+    font-size: 10px;
+    color: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+
+  .already-summarized-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 176, 32, 0.08);
+    border: 1px solid var(--amber-dim);
+    border-radius: 8px;
+    color: var(--amber);
+    font-size: 12px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+
+  .already-summarized-banner:empty { display: none; }
+
   .preferences-row select {
     flex: 1;
     background: var(--ink);
@@ -1168,6 +1193,7 @@
 
     <div class="result" id="result">
       <div class="result-card">
+        <div class="already-summarized-banner" id="alreadySummarizedBanner"></div>
         <div class="result-title" id="resultTitle"></div>
         <div class="result-submeta mono" id="resultSubmeta"></div>
         <div class="title-answer" id="titleAnswer"></div>
@@ -1410,6 +1436,7 @@
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
   const titleAnswer = document.getElementById('titleAnswer');
+  const alreadySummarizedBanner = document.getElementById('alreadySummarizedBanner');
   const chaptersContainer = document.getElementById('chaptersContainer');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
@@ -2166,9 +2193,9 @@
       batchSubtitle.textContent = `${data.playlist_title} · ${data.videos.length} video${data.videos.length !== 1 ? 's' : ''}`;
       batchVideoList.innerHTML = data.videos.map((v, i) => `
         <label class="batch-video-row">
-          <input type="checkbox" checked data-index="${i}">
+          <input type="checkbox" ${v.already_summarized ? '' : 'checked'} data-index="${i}">
           <img src="${v.thumbnail_url || ''}" alt="">
-          <span>${escapeHtml(v.title || v.video_id)}</span>
+          <span>${escapeHtml(v.title || v.video_id)}${v.already_summarized ? ' <span class="already-badge mono">already summarized</span>' : ''}</span>
         </label>
       `).join('');
 
@@ -2250,7 +2277,7 @@
 
         if (!res.ok) throw new Error(data.detail || 'Failed');
         row.classList.add('done');
-        statusEl.textContent = '✓ done';
+        statusEl.textContent = data.already_summarized ? '✓ already had it' : '✓ done';
       } catch (err) {
         if (myRunToken !== batchRunToken) return;
         row.classList.add('failed');
@@ -2290,6 +2317,8 @@
       }
 
       videoId.textContent = data.video_id;
+      alreadySummarizedBanner.textContent = data.already_summarized
+        ? '✓ You already summarized this video — showing your saved summary.' : '';
       categoryPill.textContent = data.category || '';
       resultTitle.innerHTML = titleLinkHtml(data);
       resultSubmeta.innerHTML = buildSubmeta(data);
