@@ -67,6 +67,8 @@ class Summary(Base):
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     chapters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    playlist_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    playlist_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="summaries")
 

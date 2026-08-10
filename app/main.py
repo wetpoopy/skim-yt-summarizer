@@ -40,6 +40,7 @@ from app.summarizer import summarize, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
 from app.youtube_comments import get_top_comments
+from app.playlist import estimate_batch_cost, extract_playlist_id, get_playlist_preview
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
 
@@ -76,6 +77,9 @@ app.include_router(auth_router)
 
 class SummarizeRequest(BaseModel):
     url: str
+    playlist_id: str | None = None
+    playlist_title: str | None = None
+    provider: str | None = None
 
     @field_validator("url")
     @classmethod
@@ -109,6 +113,8 @@ class SummarizeResponse(BaseModel):
     sentiment_blurb: str | None = None
     title_answer: str | None = None
     chapters: list[Chapter] = []
+    playlist_id: str | None = None
+    playlist_title: str | None = None
 
 
 class HistoryItem(BaseModel):
@@ -132,10 +138,26 @@ class HistoryItem(BaseModel):
     title_answer: str | None = None
     chapters: list[Chapter] = []
     status: str = "unread"
+    playlist_id: str | None = None
+    playlist_title: str | None = None
 
 
 class StatusUpdate(BaseModel):
     status: Literal["unread", "read", "archived"]
+
+
+class PlaylistVideo(BaseModel):
+    video_id: str
+    title: str | None = None
+    thumbnail_url: str | None = None
+    duration_seconds: int | None = None
+
+
+class PlaylistPreviewResponse(BaseModel):
+    playlist_id: str
+    playlist_title: str
+    videos: list[PlaylistVideo]
+    estimated_cost: dict[str, float]
 
 
 @app.get("/health")
@@ -181,7 +203,7 @@ def summarize_video(
 
     length = (user.summary_length if user else None) or "standard"
     fmt = (user.summary_format if user else None) or "mixed"
-    provider = (user.ai_provider if user else None) or "anthropic"
+    provider = body.provider or (user.ai_provider if user else None) or "anthropic"
 
     metadata = get_video_metadata(transcript_data["video_id"]) or {}
     comments = get_top_comments(transcript_data["video_id"])
@@ -228,6 +250,8 @@ def summarize_video(
             title_answer=result.get("answer"),
             chapters_json=json.dumps(chapters) if chapters else None,
             status="unread",
+            playlist_id=body.playlist_id,
+            playlist_title=body.playlist_title,
         )
         db.add(row)
         db.commit()
@@ -252,6 +276,8 @@ def summarize_video(
         sentiment_blurb=result.get("sentiment_blurb"),
         title_answer=result.get("answer"),
         chapters=chapters,
+        playlist_id=body.playlist_id,
+        playlist_title=body.playlist_title,
     )
 
 
@@ -278,6 +304,30 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         title_answer=r.title_answer,
         chapters=chapters,
         status=r.status or "unread",
+        playlist_id=r.playlist_id,
+        playlist_title=r.playlist_title,
+    )
+
+
+@app.get("/playlist/preview", response_model=PlaylistPreviewResponse)
+def playlist_preview(url: str, user: User = Depends(require_user)):
+    playlist_id = extract_playlist_id(url)
+    if not playlist_id:
+        raise HTTPException(status_code=422, detail="That doesn't look like a playlist URL (no ?list= found).")
+
+    preview = get_playlist_preview(playlist_id)
+    if preview is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't load that playlist. It may be private, empty, or the server is missing YOUTUBE_API_KEY.",
+        )
+
+    estimated_cost = estimate_batch_cost(preview["videos"])
+    return PlaylistPreviewResponse(
+        playlist_id=preview["playlist_id"],
+        playlist_title=preview["playlist_title"],
+        videos=[PlaylistVideo(**v) for v in preview["videos"]],
+        estimated_cost=estimated_cost,
     )
 
 
@@ -287,6 +337,7 @@ def get_history(
     category: str | None = None,
     status: Literal["unread", "read", "archived"] = "unread",
     q: str | None = None,
+    playlist_id: str | None = None,
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
@@ -309,6 +360,8 @@ def get_history(
         query = query.where(
             Summary.title.ilike(like) | Summary.summary_text.ilike(like) | Summary.channel.ilike(like)
         )
+    if playlist_id:
+        query = query.where(Summary.playlist_id == playlist_id)
     query = query.order_by(Summary.created_at.desc())
 
     rows = db.scalars(query).all()

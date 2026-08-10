@@ -657,6 +657,104 @@
     margin-top: 10px;
   }
 
+  /* ---------- batch/playlist modal ---------- */
+  .batch-modal-card { max-width: 520px; }
+
+  .batch-subtitle {
+    font-size: 12px;
+    color: var(--slate);
+    margin: -12px 0 16px;
+  }
+
+  .batch-video-list {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .batch-video-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .batch-video-row:last-child { border-bottom: none; }
+
+  .batch-video-row img {
+    width: 48px;
+    height: 27px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .batch-video-row span { flex: 1; }
+
+  .batch-cost-table {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
+  .batch-cost-item {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .batch-cost-item.selected { border-color: var(--amber); }
+
+  .batch-cost-label { color: var(--slate); margin-bottom: 4px; }
+
+  .batch-cost-value { font-family: 'IBM Plex Mono', monospace; color: var(--paper); }
+
+  .batch-actions-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .batch-actions-row .link-btn { flex: 1; text-align: center; }
+
+  .batch-progress-list {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .batch-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .batch-progress-row:last-child { border-bottom: none; }
+
+  .batch-progress-status { flex-shrink: 0; width: 90px; font-size: 11px; color: var(--slate); }
+
+  .batch-progress-row.done .batch-progress-status { color: var(--amber); }
+
+  .batch-progress-row.failed .batch-progress-status { color: var(--danger); }
+
+  .playlist-badge {
+    font-size: 11px;
+    color: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+
   .preferences-row select {
     flex: 1;
     background: var(--ink);
@@ -1200,6 +1298,32 @@
         <div class="action-row-title">Log out</div>
         <button class="link-btn mono" id="actionsLogoutBtn">LOG OUT</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="batchModal">
+    <div class="modal-card batch-modal-card">
+      <button class="modal-close" id="batchModalClose">&times;</button>
+      <h2 id="batchModalTitle">Batch summarize</h2>
+      <p class="batch-subtitle mono" id="batchSubtitle"></p>
+
+      <div id="batchConfirmScreen">
+        <div class="batch-video-list" id="batchVideoList"></div>
+        <div class="batch-cost-table" id="batchCostTable"></div>
+        <div class="preferences-row">
+          <select id="batchProviderSelect" class="mono">
+            <option value="anthropic">Claude</option>
+            <option value="openai">GPT</option>
+            <option value="gemini">Gemini</option>
+          </select>
+        </div>
+        <div class="batch-actions-row">
+          <button class="link-btn mono" id="batchCancelBtn">CANCEL</button>
+          <button class="link-btn mono" id="batchRunBtn">RUN BATCH</button>
+        </div>
+      </div>
+
+      <div class="hidden batch-progress-list" id="batchProgressList"></div>
     </div>
   </div>
 
@@ -1920,6 +2044,7 @@
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
               <span class="category-pill mono">${item.category}</span>
+              ${item.playlist_title ? `<span class="playlist-badge mono">📼 ${escapeHtml(item.playlist_title)}</span>` : ''}
               ${sentimentPillHtml(item)}
               <span class="history-card-time mono">${timeOfDay}</span>
               <button class="history-card-toggle mono">EXPAND ▾</button>
@@ -1970,9 +2095,139 @@
     errorBox.classList.remove('visible');
   }
 
+  // ---------- batch/playlist mode ----------
+  const batchModal = document.getElementById('batchModal');
+  const batchModalClose = document.getElementById('batchModalClose');
+  const batchSubtitle = document.getElementById('batchSubtitle');
+  const batchConfirmScreen = document.getElementById('batchConfirmScreen');
+  const batchVideoList = document.getElementById('batchVideoList');
+  const batchCostTable = document.getElementById('batchCostTable');
+  const batchProviderSelect = document.getElementById('batchProviderSelect');
+  const batchCancelBtn = document.getElementById('batchCancelBtn');
+  const batchRunBtn = document.getElementById('batchRunBtn');
+  const batchProgressList = document.getElementById('batchProgressList');
+
+  const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' };
+  let batchPreviewData = null;
+
+  function closeBatchModal() {
+    batchModal.classList.add('hidden');
+  }
+
+  batchModalClose.addEventListener('click', closeBatchModal);
+  batchCancelBtn.addEventListener('click', closeBatchModal);
+  batchModal.addEventListener('click', (e) => { if (e.target === batchModal) closeBatchModal(); });
+
+  function renderBatchCostTable() {
+    const checked = batchVideoList.querySelectorAll('input[type="checkbox"]:checked').length;
+    const total = batchPreviewData.videos.length;
+    const ratio = total > 0 ? checked / total : 0;
+    batchCostTable.innerHTML = Object.entries(batchPreviewData.estimated_cost).map(([provider, cost]) => {
+      const selected = provider === batchProviderSelect.value ? 'selected' : '';
+      return `<div class="batch-cost-item ${selected}">
+        <div class="batch-cost-label mono">${PROVIDER_LABELS[provider] || provider}</div>
+        <div class="batch-cost-value mono">~$${(cost * ratio).toFixed(2)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function openBatchPreview(url) {
+    hideError();
+    if (!currentUser) {
+      showError('Sign in to summarize a playlist.');
+      return;
+    }
+    try {
+      const res = await fetch(`/playlist/preview?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Couldn't load that playlist.");
+      }
+      batchPreviewData = data;
+      batchSubtitle.textContent = `${data.playlist_title} · ${data.videos.length} video${data.videos.length !== 1 ? 's' : ''}`;
+      batchVideoList.innerHTML = data.videos.map((v, i) => `
+        <label class="batch-video-row">
+          <input type="checkbox" checked data-index="${i}">
+          <img src="${v.thumbnail_url || ''}" alt="">
+          <span>${escapeHtml(v.title || v.video_id)}</span>
+        </label>
+      `).join('');
+
+      let prefProvider = 'anthropic';
+      try {
+        const prefsRes = await fetch('/auth/preferences');
+        if (prefsRes.ok) prefProvider = (await prefsRes.json()).ai_provider || 'anthropic';
+      } catch { /* keep default */ }
+      batchProviderSelect.value = prefProvider;
+
+      batchVideoList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', renderBatchCostTable);
+      });
+      batchProviderSelect.addEventListener('change', renderBatchCostTable);
+      renderBatchCostTable();
+
+      batchConfirmScreen.classList.remove('hidden');
+      batchProgressList.classList.add('hidden');
+      batchModal.classList.remove('hidden');
+    } catch (err) {
+      showError(err.message || "Couldn't load that playlist.");
+    }
+  }
+
+  batchRunBtn.addEventListener('click', async () => {
+    const selected = [...batchVideoList.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(cb => batchPreviewData.videos[Number(cb.dataset.index)]);
+    if (selected.length === 0) return;
+
+    const provider = batchProviderSelect.value;
+    const playlistId = batchPreviewData.playlist_id;
+    const playlistTitle = batchPreviewData.playlist_title;
+
+    batchConfirmScreen.classList.add('hidden');
+    batchProgressList.classList.remove('hidden');
+    batchProgressList.innerHTML = selected.map((v, i) => `
+      <div class="batch-progress-row" id="batchRow${i}">
+        <div class="batch-progress-status mono">queued</div>
+        <span>${escapeHtml(v.title || v.video_id)}</span>
+      </div>
+    `).join('');
+
+    for (let i = 0; i < selected.length; i++) {
+      const row = document.getElementById(`batchRow${i}`);
+      const statusEl = row.querySelector('.batch-progress-status');
+      statusEl.textContent = 'summarizing…';
+      try {
+        const res = await fetch('/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: `https://www.youtube.com/watch?v=${selected[i].video_id}`,
+            playlist_id: playlistId,
+            playlist_title: playlistTitle,
+            provider,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed');
+        row.classList.add('done');
+        statusEl.textContent = '✓ done';
+      } catch (err) {
+        row.classList.add('failed');
+        statusEl.textContent = `✗ ${err.message || 'failed'}`;
+      }
+    }
+
+    loadHistory();
+  });
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideError();
+    const rawUrl = urlInput.value.trim();
+    if (rawUrl.includes('list=')) {
+      openBatchPreview(rawUrl);
+      return;
+    }
     result.classList.remove('visible');
     setLoading(true);
     const statusInterval = cycleStatus();
