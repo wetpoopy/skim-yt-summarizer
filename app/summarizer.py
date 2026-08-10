@@ -24,12 +24,20 @@ def _get_client() -> Anthropic:
     return Anthropic(api_key=api_key)
 
 
+CATEGORIES = [
+    "Tech", "Education", "Entertainment", "News", "Business",
+    "Health", "Gaming", "Music", "Other",
+]
+
+
 def build_prompt(transcript_text: str) -> str:
     """Basic summarization prompt. Refine this later."""
+    category_list = ", ".join(CATEGORIES)
     return (
         "Summarize the following YouTube video transcript for someone deciding "
         "whether to watch it and/or trying to get the key points quickly.\n\n"
-        "Structure your response as:\n"
+        "Respond in exactly this format:\n"
+        f"CATEGORY: <pick the single best-fitting label from: {category_list}>\n\n"
         "1. One-sentence TL;DR\n"
         "2. 4-8 bullet points covering the main content\n"
         "3. Anything notably actionable, surprising, or a key takeaway\n\n"
@@ -38,9 +46,20 @@ def build_prompt(transcript_text: str) -> str:
     )
 
 
-def summarize(transcript_text: str, client: Anthropic | None = None) -> str:
+def _split_category(raw_text: str) -> tuple[str, str]:
+    """Pull the 'CATEGORY: X' first line off the model's response."""
+    lines = raw_text.split("\n", 1)
+    first_line = lines[0].strip()
+    if first_line.upper().startswith("CATEGORY:"):
+        category = first_line.split(":", 1)[1].strip() or "Other"
+        rest = lines[1].strip() if len(lines) > 1 else ""
+        return category, rest
+    return "Other", raw_text.strip()
+
+
+def summarize(transcript_text: str, client: Anthropic | None = None) -> dict:
     """
-    Summarize a transcript with Claude. Returns the summary text.
+    Summarize a transcript with Claude. Returns {"summary": str, "category": str}.
     Raises SummarizerError on failure.
     """
     if not transcript_text.strip():
@@ -56,10 +75,13 @@ def summarize(transcript_text: str, client: Anthropic | None = None) -> str:
             messages=[{"role": "user", "content": build_prompt(truncated)}],
         )
         text_blocks = [block.text for block in response.content if block.type == "text"]
-        summary = "\n".join(text_blocks).strip()
+        raw = "\n".join(text_blocks).strip()
+        if not raw:
+            raise SummarizerError("Claude returned an empty response.")
+        category, summary = _split_category(raw)
         if not summary:
             raise SummarizerError("Claude returned an empty response.")
-        return summary
+        return {"summary": summary, "category": category}
     except SummarizerError:
         raise
     except Exception as e:

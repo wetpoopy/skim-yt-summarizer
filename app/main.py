@@ -12,19 +12,31 @@ in via the optional x-anthropic-key header — if present, it bypasses
 the rate limit and uses the caller's own key.
 """
 
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 
 from anthropic import Anthropic
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.auth import get_current_user, require_user, router as auth_router
+from app.db import get_db, init_db
+from app.models import Summary, User
 from app.transcript import get_transcript, TranscriptError
 from app.summarizer import summarize, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
+
+
+@app.on_event("startup")
+def _on_startup():
+    init_db()
+
 
 # Wide open for MVP; tighten to your actual frontend domain before you
 # publicize this.
@@ -34,6 +46,8 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 
 class SummarizeRequest(BaseModel):
@@ -50,8 +64,20 @@ class SummarizeRequest(BaseModel):
 class SummarizeResponse(BaseModel):
     video_id: str
     summary: str
+    category: str
     language: str
     remaining_today: int | None = None
+    saved: bool = False
+
+
+class HistoryItem(BaseModel):
+    id: int
+    video_id: str
+    url: str
+    summary: str
+    category: str
+    language: str
+    created_at: datetime
 
 
 @app.get("/health")
@@ -64,6 +90,8 @@ def summarize_video(
     body: SummarizeRequest,
     request: Request,
     x_anthropic_key: str | None = Header(default=None),
+    user: User | None = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     remaining = None
 
@@ -90,16 +118,71 @@ def summarize_video(
         raise HTTPException(status_code=422, detail=str(e))
 
     try:
-        summary_text = summarize(transcript_data["text"], client=client)
+        result = summarize(transcript_data["text"], client=client)
     except SummarizerError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    saved = False
+    if user is not None:
+        row = Summary(
+            user_id=user.id,
+            video_id=transcript_data["video_id"],
+            url=body.url,
+            summary_text=result["summary"],
+            category=result["category"],
+            language=transcript_data["language"],
+        )
+        db.add(row)
+        db.commit()
+        saved = True
+
     return SummarizeResponse(
         video_id=transcript_data["video_id"],
-        summary=summary_text,
+        summary=result["summary"],
+        category=result["category"],
         language=transcript_data["language"],
         remaining_today=remaining,
+        saved=saved,
     )
+
+
+@app.get("/history", response_model=list[HistoryItem])
+def get_history(
+    date_filter: date | None = Query(default=None, alias="date"),
+    category: str | None = None,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    query = select(Summary).where(Summary.user_id == user.id)
+    if date_filter is not None:
+        day_start = datetime.combine(date_filter, time.min, tzinfo=timezone.utc)
+        day_end = datetime.combine(date_filter, time.max, tzinfo=timezone.utc)
+        query = query.where(Summary.created_at >= day_start, Summary.created_at <= day_end)
+    if category:
+        query = query.where(Summary.category == category)
+    query = query.order_by(Summary.created_at.desc())
+
+    rows = db.scalars(query).all()
+    return [
+        HistoryItem(
+            id=r.id,
+            video_id=r.video_id,
+            url=r.url,
+            summary=r.summary_text,
+            category=r.category,
+            language=r.language,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@app.get("/history/categories", response_model=list[str])
+def get_history_categories(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    rows = db.scalars(
+        select(Summary.category).where(Summary.user_id == user.id).distinct()
+    ).all()
+    return sorted(rows)
 
 
 # Mounted last and at "/" so it only catches requests that don't match

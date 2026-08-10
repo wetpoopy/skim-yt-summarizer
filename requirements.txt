@@ -3,3 +3,8 @@ uvicorn[standard]==0.32.*
 anthropic==0.40.*
 youtube-transcript-api==1.2.*
 pydantic==2.*
+email-validator==2.*
+sqlalchemy==2.*
+psycopg[binary]==3.*
+pyjwt==2.*
+bcrypt==4.*
