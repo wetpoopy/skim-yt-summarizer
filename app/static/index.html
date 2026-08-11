@@ -32,6 +32,17 @@
 
   * { box-sizing: border-box; }
 
+  /* iOS Safari force-zooms the page when a focused text input's font-size
+     is under 16px — every input/select on this page was smaller than
+     that. Once zoomed (e.g. tapping the URL field), a big layout change
+     right after (the result card appearing) can leave the page stuck
+     zoomed in, which reads as "everything is huge" / "can't shrink it
+     back down" regardless of any other per-element sizing. This is the
+     standard, universal fix. */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
   html, body {
     margin: 0;
     padding: 0;
@@ -3094,6 +3105,45 @@
     updateSubmitLabel();
     return raw;
   }
+
+  // Safari (and some other mobile browsers) only honor the Clipboard API
+  // as a "real" user gesture for a handful of trusted event types — a
+  // <button type="submit">'s 'click' is one of them, but the 'submit'
+  // event it triggers a tick later is not always treated the same way.
+  // Doing the clipboard read directly inside 'click', before the form
+  // ever submits, is the most gesture-authentic path and the most
+  // broadly compatible one.
+  submitBtn.addEventListener('click', async (e) => {
+    if (urlInput.value.trim()) return; // has text already — let the normal submit run
+    e.preventDefault();
+    hideError();
+
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      showError("This browser won't let a webpage read your clipboard automatically — tap the field and paste.");
+      urlInput.focus();
+      return;
+    }
+
+    let raw;
+    try {
+      raw = (await navigator.clipboard.readText()).trim();
+    } catch (err) {
+      showError(`Couldn't read your clipboard (${err.name || 'permission denied'}) — tap the field and paste.`);
+      urlInput.focus();
+      return;
+    }
+    if (!raw) {
+      showError('Your clipboard is empty — copy a YouTube link first.');
+      return;
+    }
+    if (!raw.includes('youtube.com') && !raw.includes('youtu.be')) {
+      showError("That doesn't look like a YouTube link.");
+      return;
+    }
+    urlInput.value = raw;
+    updateSubmitLabel();
+    form.requestSubmit();
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
