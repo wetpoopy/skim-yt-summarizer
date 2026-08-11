@@ -39,6 +39,8 @@
     color: var(--paper);
     font-family: 'Inter', -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   body {
@@ -47,6 +49,7 @@
     flex-direction: column;
     align-items: center;
     padding: 32px 20px 60px;
+    overflow-wrap: anywhere;
   }
 
   .mono {
@@ -573,6 +576,30 @@
     background: rgba(74, 222, 128, 0.06);
     border-radius: 0 6px 6px 0;
   }
+
+  .save-insights-box {
+    margin-top: 20px;
+    padding: 18px 16px;
+    border: 1px solid var(--amber-dim);
+    border-radius: var(--radius);
+    background: rgba(255, 176, 32, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .save-insights-box .confirm-input:focus { border-color: var(--amber); }
+
+  .save-insights-box .link-btn {
+    background: var(--amber);
+    color: var(--ink);
+    border: none;
+    text-align: center;
+    padding: 10px 14px;
+    font-weight: 600;
+  }
+
+  .save-insights-box .link-btn:hover { background: #FFC04D; }
 
   .highlight-box:empty { display: none; }
 
@@ -1148,38 +1175,6 @@
   }
 
   /* ---------- hero ---------- */
-  .hero {
-    width: 100%;
-    max-width: 640px;
-    text-align: left;
-    margin-bottom: 40px;
-  }
-
-  .eyebrow {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: var(--amber);
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    margin: 0 0 18px;
-  }
-
-  h1 {
-    font-size: clamp(32px, 6vw, 44px);
-    font-weight: 700;
-    line-height: 1.08;
-    letter-spacing: -0.02em;
-    margin: 0 0 14px;
-  }
-
-  .sub {
-    font-size: 16px;
-    color: var(--slate);
-    line-height: 1.5;
-    margin: 0;
-    max-width: 46ch;
-  }
-
   /* ---------- form ---------- */
   form {
     width: 100%;
@@ -1446,12 +1441,6 @@
   </header>
 
   <div id="mainView">
-    <div class="hero">
-      <p class="eyebrow">runtime → readtime</p>
-      <h1>Watch less.<br>Know more.</h1>
-      <p class="sub">Paste a YouTube link. Get the transcript's TL;DR before the video would've finished buffering.</p>
-    </div>
-
     <form id="summarizeForm">
       <div class="input-row">
         <input
@@ -1510,6 +1499,16 @@
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
         <div class="highlight-box" id="highlightBox"></div>
         <div class="counterpoint-box" id="counterpointBox"></div>
+
+        <div class="save-insights-box hidden" id="saveInsightsBox">
+          <div class="action-row-title">Save your insights</div>
+          <div class="action-row-desc mono">Create a free account to keep this summary and build your history.</div>
+          <input type="text" class="confirm-input mono" id="saveName" placeholder="First name">
+          <input type="email" class="confirm-input mono" id="saveEmail" placeholder="Email">
+          <input type="password" class="confirm-input mono" id="savePassword" placeholder="Password (8+ characters)">
+          <div class="action-row-status mono" id="saveInsightsStatus"></div>
+          <button class="link-btn mono" id="saveInsightsBtn">CREATE ACCOUNT &amp; SAVE</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1806,6 +1805,13 @@
   const sentimentBlurb = document.getElementById('sentimentBlurb');
   const highlightBox = document.getElementById('highlightBox');
   const counterpointBox = document.getElementById('counterpointBox');
+  const saveInsightsBox = document.getElementById('saveInsightsBox');
+  const saveName = document.getElementById('saveName');
+  const saveEmail = document.getElementById('saveEmail');
+  const savePassword = document.getElementById('savePassword');
+  const saveInsightsBtn = document.getElementById('saveInsightsBtn');
+  const saveInsightsStatus = document.getElementById('saveInsightsStatus');
+  let lastSummarizedUrl = null;
   const titleAnswer = document.getElementById('titleAnswer');
   const alreadySummarizedBanner = document.getElementById('alreadySummarizedBanner');
   const viewToggle = document.getElementById('viewToggle');
@@ -2829,21 +2835,41 @@
   // how long each phase typically takes, matching the backend's actual
   // call order, not literal server progress.
   const PROGRESS_STAGES = [
-    { message: 'fetching the transcript', value: 22, duration: 1400 },
-    { message: 'pulling video details', value: 40, duration: 1200 },
-    { message: 'scanning the comments', value: 55, duration: 1400 },
-    { message: 'writing your summary', value: 85, duration: 2600 },
-    { message: 'wrapping up', value: 95, duration: 1800 },
+    { message: 'fetching the transcript', value: 15, duration: 2000 },
+    { message: 'pulling video details', value: 30, duration: 2000 },
+    { message: 'scanning the comments', value: 45, duration: 2500 },
+    { message: 'writing your summary', value: 75, duration: 6000 },
+    { message: 'wrapping up', value: 90, duration: 4000 },
   ];
+  // Real requests (long videos, slower providers) can run well past the
+  // fixed stages above — instead of parking at 90% and looking stuck,
+  // keep creeping upward slowly so there's always visible motion until
+  // the real response lands.
+  const TRICKLE_MESSAGE = 'wrapping up';
+  const TRICKLE_CAP = 97;
+  const TRICKLE_STEP_MS = 2500;
 
   function runProgressStages() {
     let cancelled = false;
     let timer = null;
+    let value = 0;
 
     function apply(stage) {
-      timelineFill.style.width = stage.value + '%';
-      timelinePlayhead.style.left = stage.value + '%';
-      statusLine.textContent = `${stage.message}… ${stage.value}%`;
+      value = stage.value;
+      timelineFill.style.width = value + '%';
+      timelinePlayhead.style.left = value + '%';
+      statusLine.textContent = `${stage.message}… ${value}%`;
+    }
+
+    function trickle() {
+      if (cancelled) return;
+      if (value < TRICKLE_CAP) {
+        value += 1;
+        timelineFill.style.width = value + '%';
+        timelinePlayhead.style.left = value + '%';
+        statusLine.textContent = `${TRICKLE_MESSAGE}… ${value}%`;
+      }
+      timer = setTimeout(trickle, TRICKLE_STEP_MS);
     }
 
     let i = 0;
@@ -2856,6 +2882,8 @@
       if (i < PROGRESS_STAGES.length) {
         apply(PROGRESS_STAGES[i]);
         timer = setTimeout(advance, PROGRESS_STAGES[i].duration);
+      } else {
+        timer = setTimeout(trickle, TRICKLE_STEP_MS);
       }
     }
     timer = setTimeout(advance, PROGRESS_STAGES[0].duration);
@@ -3037,10 +3065,21 @@
     let raw = urlInput.value.trim();
     if (raw) return raw;
 
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      showError("This browser won't let a webpage read your clipboard automatically — paste the link manually.");
+      urlInput.focus();
+      return null;
+    }
+
     try {
       raw = (await navigator.clipboard.readText()).trim();
-    } catch {
-      showError('Could not read your clipboard — paste the link manually.');
+    } catch (err) {
+      // Most common real-world cause: the browser denied clipboard-read
+      // permission (often because it wasn't granted the first time, or
+      // this tab lost focus between the tap and the read). Surface the
+      // actual reason and focus the field so a manual paste is one tap.
+      showError(`Couldn't read your clipboard (${err.name || 'permission denied'}) — tap the field and paste.`);
+      urlInput.focus();
       return null;
     }
     if (!raw) {
@@ -3109,6 +3148,14 @@
         ? `<span class="highlight-label mono">The upside</span>${escapeHtml(data.highlight)}` : '';
       counterpointBox.innerHTML = data.counterpoint
         ? `<span class="counterpoint-label mono">The other side</span>${escapeHtml(data.counterpoint)}` : '';
+
+      lastSummarizedUrl = rawUrl;
+      saveInsightsBox.classList.toggle('hidden', !!currentUser);
+      saveName.value = '';
+      saveEmail.value = '';
+      savePassword.value = '';
+      saveInsightsStatus.textContent = '';
+
       result.classList.add('visible');
 
       if (typeof data.remaining_today === 'number') {
@@ -3119,6 +3166,44 @@
     } finally {
       stopProgress();
       setLoading(false);
+    }
+  });
+
+  saveInsightsBtn.addEventListener('click', async () => {
+    const full_name = saveName.value.trim();
+    const email = saveEmail.value.trim();
+    const password = savePassword.value;
+    if (!full_name || !email || password.length < 8) {
+      saveInsightsStatus.textContent = 'Fill in your name, email, and an 8+ character password.';
+      return;
+    }
+    saveInsightsBtn.disabled = true;
+    saveInsightsStatus.textContent = 'Creating your account…';
+    try {
+      const res = await fetch('/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, full_name }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data && data.detail ? data.detail : 'Something went wrong.');
+      currentUser = data;
+      renderAuthArea();
+      // Re-run now that we're authenticated, so this exact video actually
+      // lands in history (the anonymous call above was never saved).
+      if (lastSummarizedUrl) {
+        await fetch('/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: lastSummarizedUrl }),
+        });
+      }
+      saveInsightsBox.classList.add('hidden');
+      saveInsightsStatus.textContent = '';
+    } catch (e) {
+      saveInsightsStatus.textContent = e.message || 'Something went wrong — try again.';
+    } finally {
+      saveInsightsBtn.disabled = false;
     }
   });
 
