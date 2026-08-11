@@ -667,6 +667,8 @@
     position: relative;
     width: 100%;
     max-width: 380px;
+    max-height: 85vh;
+    overflow-y: auto;
     background: var(--ink-raised);
     border: 1px solid var(--line);
     border-radius: var(--radius);
@@ -2688,7 +2690,24 @@
       archiveBtn.textContent = 'ARCHIVE';
       archiveBtn.addEventListener('click', () => setHistoryStatus(item.id, 'archived'));
 
-      wrap.append(toggleReadBtn, archiveBtn);
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'history-card-action-btn danger';
+      deleteBtn.textContent = 'DELETE';
+      let confirming = false;
+      deleteBtn.addEventListener('click', async () => {
+        if (!confirming) {
+          confirming = true;
+          deleteBtn.textContent = 'CONFIRM?';
+          setTimeout(() => {
+            if (confirming) { confirming = false; deleteBtn.textContent = 'DELETE'; }
+          }, 3000);
+          return;
+        }
+        await fetch(`/history/${item.id}`, { method: 'DELETE' });
+        loadHistory();
+      });
+
+      wrap.append(toggleReadBtn, archiveBtn, deleteBtn);
     }
 
     return wrap;
