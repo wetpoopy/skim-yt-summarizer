@@ -46,6 +46,7 @@ def _require_jwt_secret() -> str:
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
+    full_name: str | None = None
 
     @field_validator("password")
     @classmethod
@@ -56,6 +57,14 @@ class SignupRequest(BaseModel):
             raise ValueError("Password is too long.")
         return v
 
+    @field_validator("full_name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v[:255] or None
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -64,10 +73,12 @@ class LoginRequest(BaseModel):
 
 class UserOut(BaseModel):
     email: str
+    full_name: str | None = None
 
 
 class MobileAuthOut(BaseModel):
     email: str
+    full_name: str | None = None
     token: str
 
 
@@ -228,13 +239,13 @@ def signup(body: SignupRequest, response: Response, db: Session = Depends(get_db
     if existing:
         raise HTTPException(status_code=409, detail="An account with that email already exists.")
 
-    user = User(email=body.email, password_hash=_hash_password(body.password))
+    user = User(email=body.email, password_hash=_hash_password(body.password), full_name=body.full_name)
     db.add(user)
     db.commit()
     db.refresh(user)
 
     token = _set_session_cookie(response, user.id)
-    return MobileAuthOut(email=user.email, token=token)
+    return MobileAuthOut(email=user.email, full_name=user.full_name, token=token)
 
 
 @router.post("/login", response_model=MobileAuthOut)
@@ -245,7 +256,7 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
     token = _set_session_cookie(response, user.id)
-    return MobileAuthOut(email=user.email, token=token)
+    return MobileAuthOut(email=user.email, full_name=user.full_name, token=token)
 
 
 @router.post("/logout")
@@ -256,7 +267,7 @@ def logout(response: Response):
 
 @router.get("/me", response_model=UserOut | None)
 def me(user: User | None = Depends(get_current_user)):
-    return UserOut(email=user.email) if user else None
+    return UserOut(email=user.email, full_name=user.full_name) if user else None
 
 
 @router.delete("/account")

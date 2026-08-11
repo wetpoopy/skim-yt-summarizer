@@ -121,6 +121,25 @@
 
   .auth-area .user-email { color: var(--slate); }
 
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--amber-dim);
+    color: var(--amber);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+  }
+
+  .user-avatar:hover { background: var(--amber); color: var(--ink); }
+
   .hidden { display: none !important; }
 
   /* ---------- history view ---------- */
@@ -1584,6 +1603,10 @@
       <div id="authFormScreen">
         <h2 id="authModalTitle">Sign in</h2>
         <form id="authForm">
+          <div id="authNameRow" class="hidden">
+            <label class="field-label mono" for="authName">Full name</label>
+            <input type="text" id="authName" autocomplete="name">
+          </div>
           <label class="field-label mono" for="authEmail">Email</label>
           <input type="email" id="authEmail" required autocomplete="email">
           <label class="field-label mono" for="authPassword">Password</label>
@@ -1661,6 +1684,8 @@
   const authModalClose = document.getElementById('authModalClose');
   const authModalTitle = document.getElementById('authModalTitle');
   const authForm = document.getElementById('authForm');
+  const authNameRow = document.getElementById('authNameRow');
+  const authName = document.getElementById('authName');
   const authEmail = document.getElementById('authEmail');
   const authPassword = document.getElementById('authPassword');
   const authError = document.getElementById('authError');
@@ -1823,12 +1848,24 @@
     return `<span class="sentiment-pill mono ${cls}">${escapeHtml(item.sentiment_label)}</span>`;
   }
 
+  function getInitials(user) {
+    if (user.full_name && user.full_name.trim()) {
+      const parts = user.full_name.trim().split(/\s+/);
+      const first = parts[0][0] || '';
+      const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+      return (first + last).toUpperCase();
+    }
+    return (user.email[0] || '?').toUpperCase();
+  }
+
   function renderAuthArea() {
     authArea.innerHTML = '';
     if (currentUser) {
-      const email = document.createElement('span');
-      email.className = 'user-email';
-      email.textContent = currentUser.email;
+      const avatar = document.createElement('button');
+      avatar.className = 'user-avatar mono';
+      avatar.textContent = getInitials(currentUser);
+      avatar.title = currentUser.full_name || currentUser.email;
+      avatar.addEventListener('click', openActionsModal);
 
       const historyBtn = document.createElement('button');
       historyBtn.textContent = 'HISTORY';
@@ -1842,7 +1879,7 @@
       actionsBtn.textContent = 'ACTIONS';
       actionsBtn.addEventListener('click', openActionsModal);
 
-      authArea.append(email, historyBtn, glossaryBtn, actionsBtn);
+      authArea.append(avatar, historyBtn, glossaryBtn, actionsBtn);
     } else {
       const signInBtn = document.createElement('button');
       signInBtn.textContent = 'SIGN IN';
@@ -1875,10 +1912,14 @@
       authModalTitle.textContent = 'Sign in';
       authSubmitBtn.textContent = 'SIGN IN';
       authSwitch.innerHTML = 'No account? <a href="#" id="authSwitchLink">Create one</a>';
+      authNameRow.classList.add('hidden');
+      authName.required = false;
     } else {
       authModalTitle.textContent = 'Create account';
       authSubmitBtn.textContent = 'SIGN UP';
       authSwitch.innerHTML = 'Already have an account? <a href="#" id="authSwitchLink">Sign in</a>';
+      authNameRow.classList.remove('hidden');
+      authName.required = true;
     }
     document.getElementById('authSwitchLink').addEventListener('click', (e) => {
       e.preventDefault();
@@ -1986,11 +2027,13 @@
     e.preventDefault();
     authError.textContent = '';
     const endpoint = authMode === 'login' ? '/auth/login' : '/auth/signup';
+    const body = { email: authEmail.value.trim(), password: authPassword.value };
+    if (authMode === 'signup') body.full_name = authName.value.trim();
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail.value.trim(), password: authPassword.value }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
