@@ -122,10 +122,29 @@ def _call_provider(provider: str, prompt: str, client: Anthropic | None = None) 
 
 
 CATEGORIES = [
-    "Tech", "AI", "Agents", "Courses", "Business", "Finance", "Entertainment",
-    "Comedy", "Music", "Gaming", "Runescape", "News", "Politics", "Science",
-    "Education", "Health", "Fitness", "Cooking", "Travel", "Sports",
-    "DIY & How-To", "Reviews", "Documentary", "Other",
+    # Tech & software
+    "Software Development", "AI & Machine Learning", "Agents", "Cybersecurity",
+    "Gadgets & Consumer Tech", "Startups & Tech Business", "Web Development",
+    "Data & Analytics",
+    # Business & finance
+    "Personal Finance", "Investing & Markets", "Cryptocurrency",
+    "Entrepreneurship", "Economics", "Career & Productivity",
+    # Gaming
+    "Gaming", "Runescape", "Esports",
+    # Education & learning
+    "Courses & Tutorials", "Science", "History", "Language Learning",
+    "Self-Improvement",
+    # Entertainment & culture
+    "Movies & TV", "Celebrity & Pop Culture", "Comedy", "Music",
+    "Podcasts & Interviews",
+    # News & politics
+    "News", "Politics", "World Affairs",
+    # Lifestyle
+    "Health & Wellness", "Fitness", "Cooking & Food", "Travel",
+    "Fashion & Beauty", "Home & DIY",
+    # Sports, reviews, misc
+    "Sports", "Product Reviews", "Documentary", "Commentary & Opinion",
+    "Other",
 ]
 
 _BULLET_COUNTS = {"brief": (1, 3), "standard": (4, 8), "detailed": (6, 10)}
@@ -222,7 +241,13 @@ def build_prompt(
     category_list = ", ".join(CATEGORIES)
     structure = _structure_instructions(length, format)
 
-    header_lines = [f"CATEGORY: <pick the single best-fitting label from: {category_list}>"]
+    header_lines = [
+        f"CATEGORY: <pick the SINGLE most specific matching label from: {category_list}. "
+        "Prefer the narrowest label that genuinely fits over a broader nearby one — e.g. "
+        "a video about a specific programming language or framework is 'Software Development', "
+        "not 'Other'; a video about budgeting or saving is 'Personal Finance', not 'Business'. "
+        "Only use 'Other' if nothing on the list is a reasonable fit.>"
+    ]
 
     if title:
         header_lines.append(
@@ -286,6 +311,17 @@ def build_prompt(
         "wants more on that specific point.>"
     )
 
+    header_lines.append(
+        "GLOSSARY: <list any acronyms, jargon, or specialized terms used in the video that a "
+        "general audience likely wouldn't already know (e.g. 'RAG', 'CAC', 'hypertrophy', "
+        "'quantitative easing'). Skip common words everyone knows. Output each on its own line "
+        "right after this one, formatted EXACTLY 'TERM :: a one-sentence definition :: a short "
+        "example sentence using the term the way THIS video used it' — use ' :: ' as the exact "
+        "separator between all three parts, one term per line, no blank lines between them, "
+        "then immediately the '---' line. If the video uses no notable jargon, write NONE "
+        "immediately after the colon on this same line instead of a list.>"
+    )
+
     header_lines.append("---")
     header = "\n".join(header_lines)
 
@@ -323,6 +359,21 @@ def build_prompt(
     )
 
 
+_MARKDOWN_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _strip_markdown(text: str | None) -> str | None:
+    """
+    Models occasionally slip markdown bold (**word**) into free-text
+    fields even when not asked for it — neither frontend renders
+    markdown, so it would otherwise show up as literal asterisks.
+    Strips the ** markers while keeping the wrapped text.
+    """
+    if not text:
+        return text
+    return _MARKDOWN_BOLD_RE.sub(r"\1", text)
+
+
 def _parse_timestamp(ts: str) -> int | None:
     parts = ts.strip().split(":")
     try:
@@ -354,6 +405,7 @@ def _parse_response(raw_text: str) -> dict:
     counterpoint = None
     chapters = []
     key_points = []
+    glossary = []
     idx = 0
 
     while idx < len(lines):
@@ -419,20 +471,46 @@ def _parse_response(raw_text: str) -> dict:
                 if point_part:
                     key_points.append({"point": point_part, "detail": detail_part})
                 idx += 1
+        elif upper.startswith("GLOSSARY:"):
+            idx += 1
+            while idx < len(lines):
+                sub = lines[idx].strip().replace("**", "").lstrip("-*# ").strip()
+                if not sub or sub.upper() == "---" or sub.count("::") < 2:
+                    break
+                term_part, definition_part, example_part = sub.split("::", 2)
+                term_part = term_part.strip()
+                definition_part = definition_part.strip()
+                example_part = example_part.strip()
+                if term_part:
+                    glossary.append({"term": term_part, "definition": definition_part, "example": example_part})
+                idx += 1
         else:
             break  # unrecognized line -> start of summary body
 
     summary = "\n".join(lines[idx:]).strip()
+    key_points = [
+        {"point": _strip_markdown(kp["point"]), "detail": _strip_markdown(kp["detail"])}
+        for kp in key_points
+    ]
+    glossary = [
+        {
+            "term": g["term"],
+            "definition": _strip_markdown(g["definition"]),
+            "example": _strip_markdown(g["example"]),
+        }
+        for g in glossary
+    ]
     return {
         "category": category,
-        "summary": summary,
-        "answer": answer,
+        "summary": _strip_markdown(summary),
+        "answer": _strip_markdown(answer),
         "sentiment_label": sentiment_label,
-        "sentiment_blurb": sentiment_blurb,
-        "highlight": highlight,
-        "counterpoint": counterpoint,
+        "sentiment_blurb": _strip_markdown(sentiment_blurb),
+        "highlight": _strip_markdown(highlight),
+        "counterpoint": _strip_markdown(counterpoint),
         "chapters": chapters,
         "key_points": key_points,
+        "glossary": glossary,
     }
 
 
@@ -450,7 +528,7 @@ def summarize(
     """
     Summarize a transcript with the chosen provider. Returns
     {"summary", "category", "answer", "sentiment_label", "sentiment_blurb",
-    "highlight", "counterpoint", "chapters", "key_points"}.
+    "highlight", "counterpoint", "chapters", "key_points", "glossary"}.
     The optional fields are None/[] unless their inputs were provided.
     Raises SummarizerError on failure.
     """

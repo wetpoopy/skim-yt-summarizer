@@ -99,6 +99,12 @@ class KeyPoint(BaseModel):
     detail: str
 
 
+class GlossaryEntry(BaseModel):
+    term: str
+    definition: str
+    example: str
+
+
 class SummarizeResponse(BaseModel):
     video_id: str
     summary: str
@@ -121,6 +127,7 @@ class SummarizeResponse(BaseModel):
     title_answer: str | None = None
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
+    glossary: list[GlossaryEntry] = []
     playlist_id: str | None = None
     playlist_title: str | None = None
     already_summarized: bool = False
@@ -149,6 +156,7 @@ class HistoryItem(BaseModel):
     title_answer: str | None = None
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
+    glossary: list[GlossaryEntry] = []
     status: str = "unread"
     playlist_id: str | None = None
     playlist_title: str | None = None
@@ -184,6 +192,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
     and re-running the AI call entirely for a video the user already has."""
     chapters = json.loads(r.chapters_json) if r.chapters_json else []
     key_points = json.loads(r.key_points_json) if r.key_points_json else []
+    glossary = json.loads(r.glossary_json) if r.glossary_json else []
     return SummarizeResponse(
         video_id=r.video_id,
         summary=r.summary_text,
@@ -206,6 +215,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         title_answer=r.title_answer,
         chapters=[Chapter(**c) for c in chapters],
         key_points=[KeyPoint(**k) for k in key_points],
+        glossary=[GlossaryEntry(**g) for g in glossary],
         playlist_id=r.playlist_id,
         playlist_title=r.playlist_title,
         already_summarized=True,
@@ -289,6 +299,7 @@ def summarize_video(
 
     chapters = result.get("chapters") or []
     key_points = result.get("key_points") or []
+    glossary = result.get("glossary") or []
 
     saved = False
     if user is not None:
@@ -314,6 +325,7 @@ def summarize_video(
             title_answer=result.get("answer"),
             chapters_json=json.dumps(chapters) if chapters else None,
             key_points_json=json.dumps(key_points) if key_points else None,
+            glossary_json=json.dumps(glossary) if glossary else None,
             status="unread",
             playlist_id=body.playlist_id,
             playlist_title=body.playlist_title,
@@ -344,6 +356,7 @@ def summarize_video(
         title_answer=result.get("answer"),
         chapters=chapters,
         key_points=key_points,
+        glossary=glossary,
         playlist_id=body.playlist_id,
         playlist_title=body.playlist_title,
     )
@@ -352,6 +365,7 @@ def summarize_video(
 def _row_to_history_item(r: Summary) -> HistoryItem:
     chapters = json.loads(r.chapters_json) if r.chapters_json else []
     key_points = json.loads(r.key_points_json) if r.key_points_json else []
+    glossary = json.loads(r.glossary_json) if r.glossary_json else []
     return HistoryItem(
         id=r.id,
         video_id=r.video_id,
@@ -375,6 +389,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         title_answer=r.title_answer,
         chapters=chapters,
         key_points=key_points,
+        glossary=glossary,
         status=r.status or "unread",
         playlist_id=r.playlist_id,
         playlist_title=r.playlist_title,
@@ -476,6 +491,56 @@ def delete_one_history_item(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+class GlossarySource(BaseModel):
+    video_id: str
+    title: str | None = None
+    url: str
+
+
+class GlossaryTerm(BaseModel):
+    term: str
+    definition: str
+    example: str
+    sources: list[GlossarySource]
+
+
+@app.get("/glossary", response_model=list[GlossaryTerm])
+def get_glossary(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """
+    Aggregates every glossary term across the user's whole history into
+    one growing list, deduped case-insensitively by term, with a
+    back-reference to every video that used it. Computed on read rather
+    than maintained as its own table — a user's history realistically
+    tops out in the hundreds of rows, so scanning it here is simpler
+    than keeping a many-to-many table in sync.
+    """
+    rows = db.scalars(
+        select(Summary)
+        .where(Summary.user_id == user.id, Summary.glossary_json.is_not(None))
+        .order_by(Summary.created_at.asc())
+    ).all()
+
+    terms: dict[str, GlossaryTerm] = {}
+    for r in rows:
+        entries = json.loads(r.glossary_json) if r.glossary_json else []
+        source = GlossarySource(video_id=r.video_id, title=r.title, url=r.url)
+        for entry in entries:
+            key = entry["term"].strip().lower()
+            if not key:
+                continue
+            if key in terms:
+                terms[key].sources.append(source)
+            else:
+                terms[key] = GlossaryTerm(
+                    term=entry["term"].strip(),
+                    definition=entry.get("definition") or "",
+                    example=entry.get("example") or "",
+                    sources=[source],
+                )
+
+    return sorted(terms.values(), key=lambda t: t.term.lower())
 
 
 @app.get("/history/categories", response_model=list[str])

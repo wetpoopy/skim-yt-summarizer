@@ -324,20 +324,29 @@
   }
 
   .chapter-link {
-    display: flex;
+    display: grid;
+    grid-template-columns: 48px 1px 1fr;
     gap: 10px;
     font-size: 13px;
     color: var(--paper);
     text-decoration: none;
     padding: 4px 0;
+    align-items: baseline;
   }
 
-  .chapter-link:hover .chapter-time { color: var(--amber); text-decoration: underline; }
+  .chapter-link:hover .chapter-time { color: var(--amber); }
 
   .chapter-time {
     font-family: 'IBM Plex Mono', monospace;
     color: var(--slate);
-    flex-shrink: 0;
+    text-align: right;
+  }
+
+  .chapter-link:hover .chapter-time { text-decoration: underline; }
+
+  .chapter-divider {
+    align-self: stretch;
+    background: var(--line);
   }
 
   .history-card-submeta {
@@ -377,6 +386,63 @@
   }
 
   .history-empty.visible { display: block; }
+
+  .glossary-subtitle {
+    color: var(--slate);
+    font-size: 12.5px;
+    margin: -12px 0 20px;
+  }
+
+  .glossary-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+
+  .glossary-term {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-bottom: 6px;
+  }
+
+  .glossary-definition {
+    font-size: 14px;
+    color: var(--paper);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+
+  .glossary-example {
+    font-size: 13px;
+    color: var(--slate);
+    font-style: italic;
+    line-height: 1.5;
+    padding-left: 10px;
+    border-left: 2px solid var(--line);
+    margin-bottom: 10px;
+  }
+
+  .glossary-sources {
+    font-size: 11px;
+    color: var(--slate);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .glossary-sources a {
+    color: var(--slate);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 3px 10px;
+  }
+
+  .glossary-sources a:hover { color: var(--amber); border-color: var(--amber-dim); }
 
   .category-pill {
     font-size: 10px;
@@ -1354,6 +1420,21 @@
     <div class="history-empty mono" id="historyEmpty">No summaries yet — go summarize something.</div>
   </div>
 
+  <div id="glossaryView" class="hidden">
+    <div class="history-header">
+      <button class="link-btn mono" id="backToMainFromGlossaryBtn">← SUMMARIZE</button>
+      <h2>Glossary</h2>
+    </div>
+    <p class="glossary-subtitle mono">Every term your summaries have explained, growing as you go.</p>
+
+    <div class="history-filters">
+      <input type="search" id="glossarySearch" class="mono" placeholder="Search terms…">
+    </div>
+
+    <div id="glossaryList"></div>
+    <div class="history-empty mono" id="glossaryEmpty">No terms yet — they'll show up here as your summaries define them.</div>
+  </div>
+
   <div class="modal-overlay hidden" id="tokenModal">
     <div class="modal-card token-modal-card">
       <button class="modal-close" id="tokenModalClose">&times;</button>
@@ -1591,6 +1672,13 @@
   const historyEmpty = document.getElementById('historyEmpty');
   const historyTabs = document.querySelectorAll('.history-tab');
 
+  const glossaryView = document.getElementById('glossaryView');
+  const backToMainFromGlossaryBtn = document.getElementById('backToMainFromGlossaryBtn');
+  const glossarySearch = document.getElementById('glossarySearch');
+  const glossaryList = document.getElementById('glossaryList');
+  const glossaryEmpty = document.getElementById('glossaryEmpty');
+  let glossaryData = [];
+
   let currentStatusTab = 'unread';
 
   let currentUser = null;
@@ -1702,6 +1790,7 @@
       const url = `${watchUrl(item)}&t=${ch.seconds}s`;
       return `<a class="chapter-link" href="${url}" target="_blank" rel="noopener">
         <span class="chapter-time mono">${formatDuration(ch.seconds)}</span>
+        <span class="chapter-divider"></span>
         <span>${escapeHtml(ch.label)}</span>
       </a>`;
     }).join('');
@@ -1731,11 +1820,15 @@
       historyBtn.textContent = 'HISTORY';
       historyBtn.addEventListener('click', showHistoryView);
 
+      const glossaryBtn = document.createElement('button');
+      glossaryBtn.textContent = 'GLOSSARY';
+      glossaryBtn.addEventListener('click', showGlossaryView);
+
       const actionsBtn = document.createElement('button');
       actionsBtn.textContent = 'ACTIONS';
       actionsBtn.addEventListener('click', openActionsModal);
 
-      authArea.append(email, historyBtn, actionsBtn);
+      authArea.append(email, historyBtn, glossaryBtn, actionsBtn);
     } else {
       const signInBtn = document.createElement('button');
       signInBtn.textContent = 'SIGN IN';
@@ -2109,15 +2202,60 @@
   // ---------- history view ----------
   function showMainView() {
     historyView.classList.add('hidden');
+    glossaryView.classList.add('hidden');
     mainView.classList.remove('hidden');
   }
 
   async function showHistoryView() {
     mainView.classList.add('hidden');
+    glossaryView.classList.add('hidden');
     historyView.classList.remove('hidden');
     await loadCategories();
     await loadHistory();
   }
+
+  // ---------- glossary view ----------
+  async function showGlossaryView() {
+    mainView.classList.add('hidden');
+    historyView.classList.add('hidden');
+    glossaryView.classList.remove('hidden');
+    await loadGlossary();
+  }
+
+  function glossaryCardHtml(term) {
+    const sources = term.sources.map(s =>
+      `<a href="${s.url}" target="_blank" rel="noopener">${escapeHtml(s.title || s.video_id)}</a>`
+    ).join('');
+    return `<div class="glossary-card">
+      <div class="glossary-term mono">${escapeHtml(term.term)}</div>
+      <div class="glossary-definition">${escapeHtml(term.definition)}</div>
+      ${term.example ? `<div class="glossary-example">"${escapeHtml(term.example)}"</div>` : ''}
+      <div class="glossary-sources">Used in: ${sources}</div>
+    </div>`;
+  }
+
+  function renderGlossaryList() {
+    const q = glossarySearch.value.trim().toLowerCase();
+    const filtered = q
+      ? glossaryData.filter(t => t.term.toLowerCase().includes(q) || t.definition.toLowerCase().includes(q))
+      : glossaryData;
+
+    glossaryList.innerHTML = filtered.map(glossaryCardHtml).join('');
+    glossaryEmpty.classList.toggle('visible', filtered.length === 0);
+  }
+
+  async function loadGlossary() {
+    try {
+      const res = await fetch('/glossary');
+      glossaryData = res.ok ? await res.json() : [];
+    } catch {
+      glossaryData = [];
+    }
+    renderGlossaryList();
+  }
+
+  backToMainFromGlossaryBtn.addEventListener('click', showMainView);
+  glossarySearch.addEventListener('input', renderGlossaryList);
 
   historyTabs.forEach(tab => {
     tab.addEventListener('click', () => {

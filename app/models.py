@@ -67,6 +67,7 @@ class Summary(Base):
     highlight: Mapped[str | None] = mapped_column(Text, nullable=True)
     counterpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_points_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    glossary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     chapters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
