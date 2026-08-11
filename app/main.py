@@ -34,9 +34,9 @@ from apscheduler.triggers.cron import CronTrigger
 from app.auth import get_current_user, require_user, router as auth_router
 from app.db import SessionLocal, get_db, init_db
 from app.digest import send_daily_digests
-from app.models import Summary, User
+from app.models import CustomGlossaryTerm, Summary, User
 from app.transcript import extract_video_id, get_transcript, TranscriptError
-from app.summarizer import summarize, QuotaExceededError, SummarizerError
+from app.summarizer import define_terms, summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
 from app.youtube_comments import get_top_comments
@@ -555,7 +555,52 @@ def get_glossary(user: User = Depends(require_user), db: Session = Depends(get_d
                     sources=[source],
                 )
 
+    custom_rows = db.scalars(
+        select(CustomGlossaryTerm)
+        .where(CustomGlossaryTerm.user_id == user.id)
+        .order_by(CustomGlossaryTerm.created_at.asc())
+    ).all()
+    for r in custom_rows:
+        key = r.term.strip().lower()
+        if key in terms:
+            continue  # a video already defined this term — keep that version (has sources)
+        terms[key] = GlossaryTerm(term=r.term, definition=r.definition, example=r.example, sources=[])
+
     return sorted(terms.values(), key=lambda t: t.term.lower())
+
+
+class DefineTermsRequest(BaseModel):
+    terms: list[str]
+
+
+@app.post("/glossary/custom", response_model=list[GlossaryTerm])
+def add_custom_glossary_terms(
+    body: DefineTermsRequest, user: User = Depends(require_user), db: Session = Depends(get_db)
+):
+    """
+    Lets a user add their own glossary terms directly, instead of waiting
+    for a video to happen to use them. Every term in the batch is defined
+    in a single LLM call, no matter how many are submitted.
+    """
+    terms = [t.strip() for t in body.terms if t.strip()][:20]
+    if not terms:
+        raise HTTPException(status_code=422, detail="Provide at least one term.")
+
+    try:
+        defined = define_terms(terms, provider=user.ai_provider or "anthropic")
+    except SummarizerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    if not defined:
+        raise HTTPException(status_code=502, detail="Couldn't define those terms. Try again.")
+
+    rows = []
+    for d in defined:
+        row = CustomGlossaryTerm(user_id=user.id, term=d["term"], definition=d["definition"], example=d["example"])
+        db.add(row)
+        rows.append(row)
+    db.commit()
+
+    return [GlossaryTerm(term=r.term, definition=r.definition, example=r.example, sources=[]) for r in rows]
 
 
 @app.get("/history/categories", response_model=list[str])

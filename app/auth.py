@@ -114,6 +114,33 @@ class PreferencesUpdate(BaseModel):
     digest_email_enabled: bool
 
 
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = None
+    email: EmailStr | None = None
+
+    @field_validator("full_name")
+    @classmethod
+    def strip_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v[:255] or None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password is too long.")
+        return v
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
@@ -268,6 +295,32 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut | None)
 def me(user: User | None = Depends(get_current_user)):
     return UserOut(email=user.email, full_name=user.full_name) if user else None
+
+
+@router.patch("/me", response_model=UserOut)
+def update_profile(
+    body: UpdateProfileRequest, user: User = Depends(require_user), db: Session = Depends(get_db)
+):
+    if body.email is not None and body.email != user.email:
+        existing = db.scalar(select(User).where(User.email == body.email))
+        if existing:
+            raise HTTPException(status_code=409, detail="An account with that email already exists.")
+        user.email = body.email
+    if body.full_name is not None:
+        user.full_name = body.full_name
+    db.commit()
+    return UserOut(email=user.email, full_name=user.full_name)
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordRequest, user: User = Depends(require_user), db: Session = Depends(get_db)
+):
+    if not _verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+    user.password_hash = _hash_password(body.new_password)
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/account")

@@ -1885,7 +1885,7 @@
     if (!item.chapters || item.chapters.length === 0) return '';
     const links = item.chapters.map(ch => {
       const url = `${watchUrl(item)}&t=${ch.seconds}s`;
-      return `<a class="chapter-link" href="${url}" target="_blank" rel="noopener">
+      return `<a class="chapter-link" href="${url}" target="_blank" rel="noopener" onclick="return confirm('Open this video on YouTube?')">
         <span class="chapter-time mono">${formatDuration(ch.seconds)}</span>
         <span class="chapter-divider"></span>
         <span>${escapeHtml(ch.label)}</span>

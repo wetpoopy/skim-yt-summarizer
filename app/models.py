@@ -79,6 +79,17 @@ class Summary(Base):
     user: Mapped["User"] = relationship(back_populates="summaries")
 
 
+class CustomGlossaryTerm(Base):
+    __tablename__ = "custom_glossary_terms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    term: Mapped[str] = mapped_column(String(255), nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    example: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class PasswordResetCode(Base):
     __tablename__ = "password_reset_codes"
 

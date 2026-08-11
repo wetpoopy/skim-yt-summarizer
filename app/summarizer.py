@@ -247,11 +247,15 @@ def build_prompt(
     header_lines = [
         f"CATEGORY: <pick EVERY label from this list that genuinely applies: {category_list}. "
         "Most videos fit 1-2 labels, occasionally 3 — list only ones that are truly relevant, "
-        "most-relevant first, separated by ', '. Prefer narrow specific labels over broad nearby "
-        "ones — e.g. a video about a specific programming language or framework is 'Software "
-        "Development', not 'Other'; a video about budgeting or saving is 'Personal Finance', not "
-        "'Business'. Only use 'Other' if nothing on the list is a reasonable fit, and never pair "
-        "'Other' with another label.>"
+        "MOST-SPECIFIC FIRST, separated by ', '. The first label you list becomes this video's "
+        "primary category, so ordering matters: 'Runescape' always goes first when it applies "
+        "(it's a narrower, dedicated label than any general gaming one); 'Agents' is more "
+        "specific than 'AI & Machine Learning' and should come first when both apply; in general, "
+        "prefer the narrowest label that genuinely fits over a broader nearby one — e.g. a video "
+        "about a specific programming language or framework is 'Software Development', not "
+        "'Other'; a video about budgeting or saving is 'Personal Finance', not 'Business'. Only "
+        "use 'Other' if nothing on the list is a reasonable fit, and never pair 'Other' with "
+        "another label.>"
     ]
 
     if title:
@@ -561,3 +565,45 @@ def summarize(
     if not parsed["summary"]:
         raise SummarizerError("The model returned an empty response.")
     return parsed
+
+
+def define_terms(terms: list[str], client: Anthropic | None = None, provider: str = "anthropic") -> list[dict]:
+    """
+    Defines a user-supplied batch of glossary terms in a single LLM call,
+    regardless of how many terms are in the batch — one round-trip whether
+    it's 1 term or 20. Returns [{"term", "definition", "example"}, ...].
+    """
+    terms = [t.strip() for t in terms if t.strip()]
+    if not terms:
+        return []
+
+    term_list = "; ".join(terms)
+    prompt = (
+        "For each of the following terms, write a general-purpose one-sentence "
+        "definition (not tied to any specific video) and a short example sentence "
+        "showing the term used in context. Output each on its own line, formatted "
+        "EXACTLY 'TERM :: a one-sentence definition :: a short example sentence "
+        "using the term' — use ' :: ' as the exact separator between all three "
+        "parts, one term per line, no blank lines between them, no numbering, no "
+        "commentary before or after the list.\n\n"
+        f"Terms: {term_list}"
+    )
+
+    raw = _call_provider(provider, prompt, client=client)
+    if not raw:
+        raise SummarizerError("The model returned an empty response.")
+
+    results = []
+    for line in raw.split("\n"):
+        line = line.strip().replace("**", "").lstrip("-*# ").strip()
+        if not line or line.count("::") < 2:
+            continue
+        term_part, definition_part, example_part = line.split("::", 2)
+        term_part = term_part.strip()
+        if term_part:
+            results.append({
+                "term": term_part,
+                "definition": _strip_markdown(definition_part.strip()),
+                "example": _strip_markdown(example_part.strip()),
+            })
+    return results
