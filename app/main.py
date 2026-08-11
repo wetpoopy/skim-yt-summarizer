@@ -94,6 +94,11 @@ class Chapter(BaseModel):
     seconds: int
 
 
+class KeyPoint(BaseModel):
+    point: str
+    detail: str
+
+
 class SummarizeResponse(BaseModel):
     video_id: str
     summary: str
@@ -111,9 +116,11 @@ class SummarizeResponse(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
     chapters: list[Chapter] = []
+    key_points: list[KeyPoint] = []
     playlist_id: str | None = None
     playlist_title: str | None = None
     already_summarized: bool = False
@@ -137,9 +144,11 @@ class HistoryItem(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
     chapters: list[Chapter] = []
+    key_points: list[KeyPoint] = []
     status: str = "unread"
     playlist_id: str | None = None
     playlist_title: str | None = None
@@ -174,6 +183,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
     the dedup short-circuit — skips re-fetching the transcript/metadata
     and re-running the AI call entirely for a video the user already has."""
     chapters = json.loads(r.chapters_json) if r.chapters_json else []
+    key_points = json.loads(r.key_points_json) if r.key_points_json else []
     return SummarizeResponse(
         video_id=r.video_id,
         summary=r.summary_text,
@@ -191,9 +201,11 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         chapters=[Chapter(**c) for c in chapters],
+        key_points=[KeyPoint(**k) for k in key_points],
         playlist_id=r.playlist_id,
         playlist_title=r.playlist_title,
         already_summarized=True,
@@ -276,6 +288,7 @@ def summarize_video(
         raise HTTPException(status_code=502, detail=str(e))
 
     chapters = result.get("chapters") or []
+    key_points = result.get("key_points") or []
 
     saved = False
     if user is not None:
@@ -296,9 +309,11 @@ def summarize_video(
             subscriber_count=subscriber_count,
             sentiment_label=result.get("sentiment_label"),
             sentiment_blurb=result.get("sentiment_blurb"),
+            highlight=result.get("highlight"),
             counterpoint=result.get("counterpoint"),
             title_answer=result.get("answer"),
             chapters_json=json.dumps(chapters) if chapters else None,
+            key_points_json=json.dumps(key_points) if key_points else None,
             status="unread",
             playlist_id=body.playlist_id,
             playlist_title=body.playlist_title,
@@ -324,9 +339,11 @@ def summarize_video(
         subscriber_count=subscriber_count,
         sentiment_label=result.get("sentiment_label"),
         sentiment_blurb=result.get("sentiment_blurb"),
+        highlight=result.get("highlight"),
         counterpoint=result.get("counterpoint"),
         title_answer=result.get("answer"),
         chapters=chapters,
+        key_points=key_points,
         playlist_id=body.playlist_id,
         playlist_title=body.playlist_title,
     )
@@ -334,6 +351,7 @@ def summarize_video(
 
 def _row_to_history_item(r: Summary) -> HistoryItem:
     chapters = json.loads(r.chapters_json) if r.chapters_json else []
+    key_points = json.loads(r.key_points_json) if r.key_points_json else []
     return HistoryItem(
         id=r.id,
         video_id=r.video_id,
@@ -352,9 +370,11 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         chapters=chapters,
+        key_points=key_points,
         status=r.status or "unread",
         playlist_id=r.playlist_id,
         playlist_title=r.playlist_title,
@@ -494,9 +514,11 @@ def export_history(
                     "duration_seconds": r.duration_seconds,
                     "sentiment_label": r.sentiment_label,
                     "sentiment_blurb": r.sentiment_blurb,
+                    "highlight": r.highlight,
                     "counterpoint": r.counterpoint,
                     "title_answer": r.title_answer,
                     "chapters": json.loads(r.chapters_json) if r.chapters_json else [],
+                    "key_points": json.loads(r.key_points_json) if r.key_points_json else [],
                     "status": r.status or "unread",
                     "summary": r.summary_text,
                     "created_at": r.created_at.isoformat(),
@@ -515,7 +537,7 @@ def export_history(
             [
                 "created_at", "video_id", "title", "title_answer", "channel", "subscriber_count",
                 "category", "language", "view_count", "like_count", "comment_count", "duration_seconds",
-                "sentiment_label", "sentiment_blurb", "counterpoint", "status", "url", "summary",
+                "sentiment_label", "sentiment_blurb", "highlight", "counterpoint", "status", "url", "summary",
             ]
         )
         for r in rows:
@@ -524,7 +546,7 @@ def export_history(
                     r.created_at.isoformat(), r.video_id, r.title, r.title_answer, r.channel,
                     r.subscriber_count, r.category, r.language, r.view_count, r.like_count,
                     r.comment_count, r.duration_seconds, r.sentiment_label, r.sentiment_blurb,
-                    r.counterpoint, r.status or "unread", r.url, r.summary_text,
+                    r.highlight, r.counterpoint, r.status or "unread", r.url, r.summary_text,
                 ]
             )
         content = buf.getvalue()
@@ -547,6 +569,11 @@ def export_history(
                 lines.append(f"> {r.title_answer}")
                 lines.append("")
             lines.append(r.summary_text)
+            if r.key_points_json:
+                lines.append("")
+                lines.append("**Key points:**")
+                for kp in json.loads(r.key_points_json):
+                    lines.append(f"- {kp['point']} — {kp['detail']}")
             if r.chapters_json:
                 lines.append("")
                 lines.append("**Chapters:**")
@@ -556,6 +583,9 @@ def export_history(
             if r.sentiment_label:
                 lines.append("")
                 lines.append(f"**Comment sentiment:** {r.sentiment_label} — {r.sentiment_blurb or ''}")
+            if r.highlight:
+                lines.append("")
+                lines.append(f"**The upside:** {r.highlight}")
             if r.counterpoint:
                 lines.append("")
                 lines.append(f"**The other side:** {r.counterpoint}")

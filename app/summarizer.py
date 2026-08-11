@@ -262,6 +262,12 @@ def build_prompt(
             "— <1-2 sentence blurb on common themes in the comments>"
         )
         header_lines.append(
+            "HIGHLIGHT: <scan the comments below for the strongest, most substantive praise or "
+            "recurring positive theme — what viewers valued most. 1-2 sentences summarizing it. "
+            "If comments are overwhelmingly critical with nothing notable to praise, write NONE. "
+            "Do not invent praise that isn't actually present in the comments.>"
+        )
+        header_lines.append(
             "COUNTERPOINT: <scan ALL the comments below (not just the highest-liked) for the "
             "strongest substantive criticism, disagreement, correction, or counterargument to "
             "the video's claims — the 'other side' someone deciding whether to trust this video "
@@ -269,6 +275,16 @@ def build_prompt(
             "real criticism (just praise, jokes, or unrelated chatter), write NONE. Do not "
             "invent a counterpoint that isn't actually present in the comments.>"
         )
+
+    header_lines.append(
+        "KEY_POINTS: <break the video's content into 4-8 key points. Output each on its own "
+        "line right after this one, formatted EXACTLY 'short one-sentence point (≤20 words) "
+        ":: a deeper 2-3 sentence elaboration with specifics/examples from the transcript' — "
+        "use ' :: ' as the exact separator between the two, one point per line, no blank lines "
+        "between them, then immediately the '---' line. The short parts alone should give "
+        "someone the full gist in 10 seconds of reading; the elaborations are for someone who "
+        "wants more on that specific point.>"
+    )
 
     header_lines.append("---")
     header = "\n".join(header_lines)
@@ -289,8 +305,8 @@ def build_prompt(
         extra_context += (
             "\n\nTOP COMMENTS (shown with like counts — weight your overall sentiment "
             "assessment toward the higher-liked ones, but read every comment when looking "
-            f"for a counterpoint since criticism isn't always the most-liked; also check "
-            f"these for timestamp callouts):\n{comment_lines}"
+            f"for a highlight or counterpoint since praise/criticism aren't always the "
+            f"most-liked; also check these for timestamp callouts):\n{comment_lines}"
         )
 
     title_line = f'the video titled "{title}"' if title else "the following YouTube video"
@@ -334,8 +350,10 @@ def _parse_response(raw_text: str) -> dict:
     answer = None
     sentiment_label = None
     sentiment_blurb = None
+    highlight = None
     counterpoint = None
     chapters = []
+    key_points = []
     idx = 0
 
     while idx < len(lines):
@@ -370,6 +388,10 @@ def _parse_response(raw_text: str) -> dict:
             sentiment_label = label.strip() or None
             sentiment_blurb = blurb.strip() or None
             idx += 1
+        elif upper.startswith("HIGHLIGHT:"):
+            val = stripped.split(":", 1)[1].strip()
+            highlight = None if not val or val.upper() == "NONE" else val
+            idx += 1
         elif upper.startswith("COUNTERPOINT:"):
             val = stripped.split(":", 1)[1].strip()
             counterpoint = None if not val or val.upper() == "NONE" else val
@@ -385,6 +407,18 @@ def _parse_response(raw_text: str) -> dict:
                 if seconds is not None and label_part.strip():
                     chapters.append({"label": label_part.strip(), "seconds": seconds})
                 idx += 1
+        elif upper.startswith("KEY_POINTS:"):
+            idx += 1
+            while idx < len(lines):
+                sub = lines[idx].strip().replace("**", "").lstrip("-*# ").strip()
+                if not sub or sub.upper() == "---" or "::" not in sub:
+                    break
+                point_part, detail_part = sub.split("::", 1)
+                point_part = point_part.strip()
+                detail_part = detail_part.strip()
+                if point_part:
+                    key_points.append({"point": point_part, "detail": detail_part})
+                idx += 1
         else:
             break  # unrecognized line -> start of summary body
 
@@ -395,8 +429,10 @@ def _parse_response(raw_text: str) -> dict:
         "answer": answer,
         "sentiment_label": sentiment_label,
         "sentiment_blurb": sentiment_blurb,
+        "highlight": highlight,
         "counterpoint": counterpoint,
         "chapters": chapters,
+        "key_points": key_points,
     }
 
 
@@ -414,7 +450,7 @@ def summarize(
     """
     Summarize a transcript with the chosen provider. Returns
     {"summary", "category", "answer", "sentiment_label", "sentiment_blurb",
-    "counterpoint", "chapters"}.
+    "highlight", "counterpoint", "chapters", "key_points"}.
     The optional fields are None/[] unless their inputs were provided.
     Raises SummarizerError on failure.
     """

@@ -442,6 +442,94 @@
     margin-bottom: 4px;
   }
 
+  .highlight-box {
+    font-size: 12.5px;
+    color: var(--paper);
+    line-height: 1.5;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-left: 2px solid #4ADE80;
+    background: rgba(74, 222, 128, 0.06);
+    border-radius: 0 6px 6px 0;
+  }
+
+  .highlight-box:empty { display: none; }
+
+  .highlight-label {
+    font-size: 10px;
+    color: #4ADE80;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .view-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .view-toggle.hidden { display: none; }
+
+  .view-toggle-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+  }
+
+  .view-toggle-btn.active {
+    border-color: var(--amber-dim);
+    color: var(--amber);
+  }
+
+  .key-points-list.hidden { display: none; }
+
+  .key-point-row {
+    border-bottom: 1px solid var(--line);
+    padding: 8px 0;
+  }
+
+  .key-point-row:last-child { border-bottom: none; }
+
+  .key-point-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+    color: var(--paper);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .key-point-arrow {
+    color: var(--amber);
+    flex-shrink: 0;
+    font-size: 11px;
+    transition: transform 0.15s ease;
+  }
+
+  .key-point-row.open .key-point-arrow { transform: rotate(90deg); }
+
+  .key-point-detail {
+    margin: 6px 0 0 19px;
+    font-size: 13px;
+    color: var(--slate);
+    line-height: 1.5;
+  }
+
+  .key-point-detail.hidden { display: none; }
+
   /* ---------- auth modal ---------- */
   .modal-overlay {
     position: fixed;
@@ -1225,9 +1313,17 @@
           <span id="sentimentPillContainer"></span>
           <button class="copy-btn mono" id="copyBtn">COPY</button>
         </div>
-        <div class="summary-text" id="summaryText"></div>
+        <div class="summary-view-container">
+          <div class="view-toggle hidden" id="viewToggle">
+            <button class="view-toggle-btn mono" data-view="short">SHORT</button>
+            <button class="view-toggle-btn active mono" data-view="long">LONG</button>
+          </div>
+          <div class="summary-text summary-long-content" id="summaryText"></div>
+          <div class="key-points-list summary-short-content hidden" id="keyPointsList"></div>
+        </div>
         <div id="chaptersContainer"></div>
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
+        <div class="highlight-box" id="highlightBox"></div>
         <div class="counterpoint-box" id="counterpointBox"></div>
       </div>
     </div>
@@ -1458,9 +1554,14 @@
   const resultSubmeta = document.getElementById('resultSubmeta');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
+  const highlightBox = document.getElementById('highlightBox');
   const counterpointBox = document.getElementById('counterpointBox');
   const titleAnswer = document.getElementById('titleAnswer');
   const alreadySummarizedBanner = document.getElementById('alreadySummarizedBanner');
+  const viewToggle = document.getElementById('viewToggle');
+  const shortViewBtn = document.getElementById('shortViewBtn');
+  const longViewBtn = document.getElementById('longViewBtn');
+  const keyPointsList = document.getElementById('keyPointsList');
   const chaptersContainer = document.getElementById('chaptersContainer');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
@@ -1517,6 +1618,50 @@
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+  }
+
+  function keyPointsHtml(keyPoints) {
+    return keyPoints.map((kp, i) => `
+      <div class="key-point-row" data-idx="${i}">
+        <button class="key-point-toggle" type="button">
+          <span class="key-point-arrow">▸</span>
+          <span>${escapeHtml(kp.point)}</span>
+        </button>
+        <div class="key-point-detail hidden">${escapeHtml(kp.detail)}</div>
+      </div>
+    `).join('');
+  }
+
+  // Delegated so it works for both the freshly-rendered result card and
+  // any history card containing a key-points list.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.key-point-toggle');
+    if (!btn) return;
+    const row = btn.closest('.key-point-row');
+    const detail = row.querySelector('.key-point-detail');
+    const open = row.classList.toggle('open');
+    detail.classList.toggle('hidden', !open);
+  });
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-toggle-btn');
+    if (!btn) return;
+    const container = btn.closest('.summary-view-container');
+    const isShort = btn.dataset.view === 'short';
+    container.querySelectorAll('.view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === btn.dataset.view);
+    });
+    container.querySelector('.summary-long-content').classList.toggle('hidden', isShort);
+    container.querySelector('.summary-short-content').classList.toggle('hidden', !isShort);
+  });
+
+  function setSummaryView(mode) {
+    const isShort = mode === 'short';
+    viewToggle.querySelectorAll('.view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === mode);
+    });
+    summaryText.classList.toggle('hidden', isShort);
+    keyPointsList.classList.toggle('hidden', !isShort);
   }
 
   function watchUrl(item) {
@@ -2119,7 +2264,19 @@
             </div>
             ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
-          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}</div>
+          <div class="history-card-summary">
+            <div class="summary-view-container">
+              ${item.key_points && item.key_points.length > 0 ? `
+                <div class="view-toggle">
+                  <button class="view-toggle-btn mono" data-view="short">SHORT</button>
+                  <button class="view-toggle-btn active mono" data-view="long">LONG</button>
+                </div>
+                <div class="summary-long-content">${item.summary.replace(/</g, '&lt;')}</div>
+                <div class="key-points-list summary-short-content hidden">${keyPointsHtml(item.key_points)}</div>
+              ` : `<div class="summary-long-content">${item.summary.replace(/</g, '&lt;')}</div>`}
+            </div>
+            ${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${item.highlight ? `<div class="highlight-box"><span class="highlight-label mono">The upside</span>${escapeHtml(item.highlight)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}
+          </div>
         `;
 
         const toggleBtn = card.querySelector('.history-card-toggle');
@@ -2348,9 +2505,19 @@
       resultSubmeta.innerHTML = buildSubmeta(data);
       titleAnswer.textContent = data.title_answer || '';
       summaryText.textContent = data.summary;
+      if (data.key_points && data.key_points.length > 0) {
+        keyPointsList.innerHTML = keyPointsHtml(data.key_points);
+        viewToggle.classList.remove('hidden');
+      } else {
+        keyPointsList.innerHTML = '';
+        viewToggle.classList.add('hidden');
+      }
+      setSummaryView('long');
       chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       sentimentBlurb.textContent = data.sentiment_blurb || '';
+      highlightBox.innerHTML = data.highlight
+        ? `<span class="highlight-label mono">The upside</span>${escapeHtml(data.highlight)}` : '';
       counterpointBox.innerHTML = data.counterpoint
         ? `<span class="counterpoint-label mono">The other side</span>${escapeHtml(data.counterpoint)}` : '';
       result.classList.add('visible');
