@@ -312,14 +312,19 @@ def build_prompt(
     )
 
     header_lines.append(
-        "GLOSSARY: <list any acronyms, jargon, or specialized terms used in the video that a "
-        "general audience likely wouldn't already know (e.g. 'RAG', 'CAC', 'hypertrophy', "
-        "'quantitative easing'). Skip common words everyone knows. Output each on its own line "
-        "right after this one, formatted EXACTLY 'TERM :: a one-sentence definition :: a short "
-        "example sentence using the term the way THIS video used it' — use ' :: ' as the exact "
-        "separator between all three parts, one term per line, no blank lines between them, "
-        "then immediately the '---' line. If the video uses no notable jargon, write NONE "
-        "immediately after the colon on this same line instead of a list.>"
+        "GLOSSARY: <list every acronym, piece of jargon, specialized term, or named "
+        "product/program/feature used in the video that a general audience likely wouldn't "
+        "already know — this includes technical terms (e.g. 'RAG', 'hypertrophy'), business/"
+        "finance jargon (e.g. 'CAC', 'quantitative easing'), AND specific named things like "
+        "product features, company initiatives, or proprietary programs mentioned by name "
+        "(e.g. 'Pay Per Crawl', 'Vision Pro', a lesser-known law or protocol) — don't limit "
+        "yourself to only acronyms. When in doubt about whether a term is common knowledge, "
+        "include it. Skip only truly everyday words everyone knows. Output each on its own "
+        "line right after this one, formatted EXACTLY 'TERM :: a one-sentence definition :: a "
+        "short example sentence using the term the way THIS video used it' — use ' :: ' as the "
+        "exact separator between all three parts, one term per line, no blank lines between "
+        "them, then immediately the '---' line. If the video truly uses no notable terms, "
+        "write NONE immediately after the colon on this same line instead of a list.>"
     )
 
     header_lines.append("---")

@@ -115,6 +115,7 @@ class SummarizeResponse(BaseModel):
     title: str | None = None
     channel: str | None = None
     channel_id: str | None = None
+    published_at: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
     like_count: int | None = None
@@ -144,6 +145,7 @@ class HistoryItem(BaseModel):
     title: str | None = None
     channel: str | None = None
     channel_id: str | None = None
+    published_at: str | None = None
     view_count: int | None = None
     comment_count: int | None = None
     like_count: int | None = None
@@ -203,6 +205,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         title=r.title,
         channel=r.channel,
         channel_id=r.channel_id,
+        published_at=r.published_at,
         view_count=r.view_count,
         comment_count=r.comment_count,
         like_count=r.like_count,
@@ -313,6 +316,7 @@ def summarize_video(
             title=metadata.get("title"),
             channel=metadata.get("channel"),
             channel_id=metadata.get("channel_id"),
+            published_at=metadata.get("published_at"),
             view_count=metadata.get("view_count"),
             comment_count=metadata.get("comment_count"),
             like_count=metadata.get("like_count"),
@@ -344,6 +348,7 @@ def summarize_video(
         title=metadata.get("title"),
         channel=metadata.get("channel"),
         channel_id=metadata.get("channel_id"),
+        published_at=metadata.get("published_at"),
         view_count=metadata.get("view_count"),
         comment_count=metadata.get("comment_count"),
         like_count=metadata.get("like_count"),
@@ -377,6 +382,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         title=r.title,
         channel=r.channel,
         channel_id=r.channel_id,
+        published_at=r.published_at,
         view_count=r.view_count,
         comment_count=r.comment_count,
         like_count=r.like_count,
@@ -436,6 +442,7 @@ def get_history(
     status: Literal["unread", "read", "archived"] = "unread",
     q: str | None = None,
     playlist_id: str | None = None,
+    sort: Literal["newest", "oldest", "category", "channel"] = "newest",
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
@@ -460,7 +467,15 @@ def get_history(
         )
     if playlist_id:
         query = query.where(Summary.playlist_id == playlist_id)
-    query = query.order_by(Summary.created_at.desc())
+
+    if sort == "oldest":
+        query = query.order_by(Summary.created_at.asc())
+    elif sort == "category":
+        query = query.order_by(Summary.category.asc(), Summary.created_at.desc())
+    elif sort == "channel":
+        query = query.order_by(Summary.channel.asc(), Summary.created_at.desc())
+    else:
+        query = query.order_by(Summary.created_at.desc())
 
     rows = db.scalars(query).all()
     return [_row_to_history_item(r) for r in rows]
@@ -570,6 +585,7 @@ def export_history(
                     "title": r.title,
                     "channel": r.channel,
                     "channel_id": r.channel_id,
+                    "published_at": r.published_at,
                     "subscriber_count": r.subscriber_count,
                     "category": r.category,
                     "language": r.language,

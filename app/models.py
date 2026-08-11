@@ -57,6 +57,7 @@ class Summary(Base):
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
     channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
