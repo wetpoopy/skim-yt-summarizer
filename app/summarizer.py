@@ -123,7 +123,7 @@ def _call_provider(provider: str, prompt: str, client: Anthropic | None = None) 
 
 CATEGORIES = [
     # Tech & software
-    "Software Development", "AI & Machine Learning", "Agents", "Cybersecurity",
+    "Software Development", "AI & Machine Learning", "Agents", "API", "Cybersecurity",
     "Gadgets & Consumer Tech", "Startups & Tech Business", "Web Development",
     "Data & Analytics",
     # Business & finance
@@ -148,16 +148,20 @@ CATEGORIES = [
 ]
 
 _RUNESCAPE_SIGNAL_RE = re.compile(r"\brunescape\b|\bosrs\b|\bjagex\b", re.IGNORECASE)
+_API_TITLE_RE = re.compile(r"\bapi\b", re.IGNORECASE)
 
 
 def normalize_category(raw_category: str, title: str | None = None, extra_text: str = "") -> str:
     """
     A deterministic safety net on top of the CATEGORY prompt instructions,
     not a replacement for them: drops any label the model invented outside
-    CATEGORIES (nothing stops it hallucinating one), and force-applies two
-    rules that are cheap to guarantee exactly rather than hope the model
-    remembers every time — 'Agents' whenever the title says so, and
-    'Runescape' whenever OSRS-specific terms show up anywhere.
+    CATEGORIES (nothing stops it hallucinating one), and force-applies rules
+    that are cheap to guarantee exactly rather than hope the model
+    remembers every time. Precedence when multiple rules fire on the same
+    video (each inserted after the last, so the last one applied ends up
+    primary): 'Agents' if the title says so, then 'API' if the title says
+    so (API outranks Agents when both are in the title), then 'Runescape'
+    if OSRS-specific terms show up anywhere — always the primary, full stop.
     """
     valid = {c.lower(): c for c in CATEGORIES}
     cats = []
@@ -172,6 +176,10 @@ def normalize_category(raw_category: str, title: str | None = None, extra_text: 
     if "agent" in title_lower:
         cats = [c for c in cats if c != "Agents"]
         cats.insert(0, "Agents")
+
+    if _API_TITLE_RE.search(title_lower):
+        cats = [c for c in cats if c != "API"]
+        cats.insert(0, "API")
 
     if _RUNESCAPE_SIGNAL_RE.search(f"{title or ''} {extra_text}"):
         cats = [c for c in cats if c != "Runescape"]
@@ -284,8 +292,9 @@ def build_prompt(
         "primary category, so ordering matters: 'Runescape' always goes first when it applies — "
         "this includes any video substantially about RuneScape/Old School RuneScape content even "
         "if the word 'RuneScape' is never said outright (e.g. OSRS bosses, minigames, quests, "
-        "skilling, the Grand Exchange, Jagex, or other OSRS-specific slang); 'Agents' is more "
-        "specific than 'AI & Machine Learning' and should come first when both apply; in general, "
+        "skilling, the Grand Exchange, Jagex, or other OSRS-specific slang); 'API' comes before "
+        "'Agents' when both apply, and 'Agents' is more specific than 'AI & Machine Learning' and "
+        "should come first when both of those apply; in general, "
         "prefer the narrowest label that genuinely fits over a broader nearby one — e.g. a video "
         "about a specific programming language or framework is 'Software Development', not "
         "'Other'; a video about budgeting or saving is 'Personal Finance', not 'Business'. Only "

@@ -503,6 +503,36 @@ def update_history_status(
     return _row_to_history_item(row)
 
 
+def _archive_glossary_terms(db: Session, user_id: int, summaries: list[Summary]) -> None:
+    """
+    GET /glossary computes video-sourced terms on the fly from Summary rows
+    (see get_glossary above), so deleting those rows would otherwise erase
+    a term the moment its source video is deleted — undermining the whole
+    point of a "growing" glossary. Copy each term into CustomGlossaryTerm
+    (skipping ones already saved there) before the caller deletes the rows.
+    """
+    existing = {
+        t.lower()
+        for t in db.scalars(
+            select(CustomGlossaryTerm.term).where(CustomGlossaryTerm.user_id == user_id)
+        ).all()
+    }
+    for r in summaries:
+        if not r.glossary_json:
+            continue
+        for entry in json.loads(r.glossary_json):
+            term = (entry.get("term") or "").strip()
+            if not term or term.lower() in existing:
+                continue
+            existing.add(term.lower())
+            db.add(CustomGlossaryTerm(
+                user_id=user_id,
+                term=term,
+                definition=entry.get("definition") or "",
+                example=entry.get("example") or "",
+            ))
+
+
 @app.delete("/history/{summary_id}")
 def delete_one_history_item(
     summary_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)
@@ -510,6 +540,7 @@ def delete_one_history_item(
     row = db.scalar(select(Summary).where(Summary.id == summary_id, Summary.user_id == user.id))
     if not row:
         raise HTTPException(status_code=404, detail="Summary not found.")
+    _archive_glossary_terms(db, user.id, [row])
     db.delete(row)
     db.commit()
     return {"ok": True}
@@ -745,6 +776,8 @@ def export_history(
 
 @app.delete("/history")
 def delete_all_history(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    rows = db.scalars(select(Summary).where(Summary.user_id == user.id)).all()
+    _archive_glossary_terms(db, user.id, rows)
     result = db.execute(delete(Summary).where(Summary.user_id == user.id))
     db.commit()
     return {"deleted": result.rowcount}
