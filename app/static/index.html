@@ -625,12 +625,23 @@
     width: 100%;
     background: none;
     border: none;
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
     text-align: left;
     cursor: pointer;
     padding: 0;
     color: var(--paper);
-    font-size: 14px;
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px !important;
+    font-weight: 600;
     line-height: 1.5;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .key-point-toggle span {
+    font-size: inherit;
   }
 
   .key-point-arrow {
@@ -1264,7 +1275,7 @@
   .timeline .playhead {
     position: absolute;
     top: 50%;
-    left: 0;
+    left: 0%;
     width: 10px;
     height: 10px;
     margin-top: -5px;
@@ -1272,21 +1283,16 @@
     border-radius: 50%;
     background: var(--amber);
     box-shadow: 0 0 10px var(--amber);
-    animation: scrub 1.6s ease-in-out infinite;
-  }
-
-  @keyframes scrub {
-    0%   { left: 0%; }
-    50%  { left: 100%; }
-    100% { left: 0%; }
+    transition: left 0.4s ease-out;
   }
 
   .timeline .fill {
     position: absolute;
     top: 0; left: 0; height: 100%;
-    background: linear-gradient(90deg, transparent, var(--amber-dim));
-    width: 100%;
-    opacity: 0.4;
+    background: var(--amber-dim);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.4s ease-out;
   }
 
   .status-line {
@@ -1494,11 +1500,11 @@
         </div>
         <div class="summary-view-container">
           <div class="view-toggle hidden" id="viewToggle">
-            <button class="view-toggle-btn mono" data-view="short">SHORT</button>
-            <button class="view-toggle-btn active mono" data-view="long">LONG</button>
+            <button class="view-toggle-btn active mono" data-view="short">SHORT</button>
+            <button class="view-toggle-btn mono" data-view="long">LONG</button>
           </div>
-          <div class="summary-text summary-long-content" id="summaryText"></div>
-          <div class="key-points-list summary-short-content hidden" id="keyPointsList"></div>
+          <div class="summary-text summary-long-content hidden" id="summaryText"></div>
+          <div class="key-points-list summary-short-content" id="keyPointsList"></div>
         </div>
         <div id="chaptersContainer"></div>
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
@@ -1787,6 +1793,8 @@
   const btnLabel = document.getElementById('btnLabel');
   const timelineWrap = document.getElementById('timelineWrap');
   const statusLine = document.getElementById('statusLine');
+  const timelineFill = document.querySelector('.timeline .fill');
+  const timelinePlayhead = document.querySelector('.timeline .playhead');
   const result = document.getElementById('result');
   const summaryText = document.getElementById('summaryText');
   const videoId = document.getElementById('videoId');
@@ -2779,11 +2787,11 @@
             <div class="summary-view-container">
               ${item.key_points && item.key_points.length > 0 ? `
                 <div class="view-toggle">
-                  <button class="view-toggle-btn mono" data-view="short">SHORT</button>
-                  <button class="view-toggle-btn active mono" data-view="long">LONG</button>
+                  <button class="view-toggle-btn active mono" data-view="short">SHORT</button>
+                  <button class="view-toggle-btn mono" data-view="long">LONG</button>
                 </div>
-                <div class="summary-long-content">${item.summary.replace(/</g, '&lt;')}</div>
-                <div class="key-points-list summary-short-content hidden">${keyPointsHtml(item.key_points)}</div>
+                <div class="summary-long-content hidden">${item.summary.replace(/</g, '&lt;')}</div>
+                <div class="key-points-list summary-short-content">${keyPointsHtml(item.key_points)}</div>
               ` : `<div class="summary-long-content">${item.summary.replace(/</g, '&lt;')}</div>`}
             </div>
             ${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${item.highlight ? `<div class="highlight-box"><span class="highlight-label mono">The upside</span>${escapeHtml(item.highlight)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}
@@ -2803,22 +2811,61 @@
     } catch { /* leave list empty */ }
   }
 
-  const statusMessages = ['reading transcript…', 'writing summary…', 'almost there…'];
+  function updateSubmitLabel() {
+    if (submitBtn.disabled) return; // mid-request — leave the WORKING label alone
+    btnLabel.textContent = urlInput.value.trim() ? 'SUMMARIZE' : 'PASTE & SUMMARIZE';
+  }
 
   function setLoading(isLoading) {
     submitBtn.disabled = isLoading;
     urlInput.disabled = isLoading;
     timelineWrap.classList.toggle('active', isLoading);
-    btnLabel.textContent = isLoading ? 'WORKING' : 'SUMMARIZE';
+    btnLabel.textContent = isLoading ? 'WORKING' : '';
+    if (!isLoading) updateSubmitLabel();
   }
 
-  function cycleStatus() {
+  // There's no live progress signal from the backend (summarize is one
+  // HTTP round-trip, not a stream) — this is a staged estimate tuned to
+  // how long each phase typically takes, matching the backend's actual
+  // call order, not literal server progress.
+  const PROGRESS_STAGES = [
+    { message: 'fetching the transcript', value: 22, duration: 1400 },
+    { message: 'pulling video details', value: 40, duration: 1200 },
+    { message: 'scanning the comments', value: 55, duration: 1400 },
+    { message: 'writing your summary', value: 85, duration: 2600 },
+    { message: 'wrapping up', value: 95, duration: 1800 },
+  ];
+
+  function runProgressStages() {
+    let cancelled = false;
+    let timer = null;
+
+    function apply(stage) {
+      timelineFill.style.width = stage.value + '%';
+      timelinePlayhead.style.left = stage.value + '%';
+      statusLine.textContent = `${stage.message}… ${stage.value}%`;
+    }
+
     let i = 0;
-    statusLine.textContent = statusMessages[0];
-    return setInterval(() => {
-      i = (i + 1) % statusMessages.length;
-      statusLine.textContent = statusMessages[i];
-    }, 2200);
+    timelineFill.style.width = '0%';
+    timelinePlayhead.style.left = '0%';
+    apply(PROGRESS_STAGES[0]);
+    function advance() {
+      if (cancelled) return;
+      i += 1;
+      if (i < PROGRESS_STAGES.length) {
+        apply(PROGRESS_STAGES[i]);
+        timer = setTimeout(advance, PROGRESS_STAGES[i].duration);
+      }
+    }
+    timer = setTimeout(advance, PROGRESS_STAGES[0].duration);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      timelineFill.style.width = '100%';
+      timelinePlayhead.style.left = '100%';
+    };
   }
 
   function showError(message) {
@@ -2980,23 +3027,53 @@
     loadHistory();
   });
 
+  urlInput.addEventListener('input', updateSubmitLabel);
+  updateSubmitLabel();
+
+  // Reads the clipboard when the field is empty so one click of the
+  // (now context-aware) submit button covers both "I already have the
+  // link typed" and "I just copied a link" without a separate button.
+  async function resolveSubmitUrl() {
+    let raw = urlInput.value.trim();
+    if (raw) return raw;
+
+    try {
+      raw = (await navigator.clipboard.readText()).trim();
+    } catch {
+      showError('Could not read your clipboard — paste the link manually.');
+      return null;
+    }
+    if (!raw) {
+      showError('Your clipboard is empty — copy a YouTube link first.');
+      return null;
+    }
+    if (!raw.includes('youtube.com') && !raw.includes('youtu.be')) {
+      showError("That doesn't look like a YouTube link.");
+      return null;
+    }
+    urlInput.value = raw;
+    updateSubmitLabel();
+    return raw;
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideError();
-    const rawUrl = urlInput.value.trim();
+    const rawUrl = await resolveSubmitUrl();
+    if (!rawUrl) return;
     if (rawUrl.includes('list=')) {
       openBatchPreview(rawUrl);
       return;
     }
     result.classList.remove('visible');
     setLoading(true);
-    const statusInterval = cycleStatus();
+    const stopProgress = runProgressStages();
 
     try {
       const res = await fetch('/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlInput.value.trim() }),
+        body: JSON.stringify({ url: rawUrl }),
       });
 
       const data = await res.json();
@@ -3024,7 +3101,7 @@
         keyPointsList.innerHTML = '';
         viewToggle.classList.add('hidden');
       }
-      setSummaryView('long');
+      setSummaryView('short');
       chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       sentimentBlurb.textContent = data.sentiment_blurb || '';
@@ -3040,7 +3117,7 @@
     } catch (err) {
       showError(err.message || 'Couldn\u2019t reach the server. Try again in a moment.');
     } finally {
-      clearInterval(statusInterval);
+      stopProgress();
       setLoading(false);
     }
   });
