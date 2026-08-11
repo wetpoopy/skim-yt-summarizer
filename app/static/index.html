@@ -673,6 +673,46 @@
     padding: 32px 28px 28px;
   }
 
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: flex-start;
+    z-index: 10;
+  }
+
+  .drawer-panel {
+    width: 100%;
+    max-width: 320px;
+    height: 100%;
+    background: var(--ink-raised);
+    border-right: 1px solid var(--line);
+    padding: 24px 20px;
+    overflow-y: auto;
+  }
+
+  .drawer-panel h2 { margin: 0 0 16px; font-size: 18px; }
+
+  .drawer-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 12px 0;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: none;
+    color: var(--paper);
+    font-family: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .drawer-item.active { border-bottom-color: var(--amber-dim); color: var(--amber); }
+  .drawer-count { color: var(--slate); font-size: 12px; }
+
   .modal-card h2 {
     margin: 0 0 20px;
     font-size: 20px;
@@ -1481,7 +1521,8 @@
     <div class="history-filters">
       <input type="search" id="searchFilter" class="mono" placeholder="Search title, summary, channel…">
       <input type="date" id="dateFilter" class="mono">
-      <select id="categoryFilter" class="mono">
+      <button class="link-btn mono" id="categoryPanelBtn">▤ CATEGORIES</button>
+      <select id="categoryFilter" class="mono hidden">
         <option value="">All categories</option>
       </select>
       <select id="sortFilter" class="mono">
@@ -1506,10 +1547,27 @@
 
     <div class="history-filters">
       <input type="search" id="glossarySearch" class="mono" placeholder="Search terms…">
+      <button class="link-btn mono" id="addTermToggleBtn">+ ADD YOUR OWN TERM</button>
+    </div>
+
+    <div class="action-row action-row-stack hidden" id="addTermBox">
+      <input type="text" class="confirm-input mono" id="addTermInput" placeholder="Term(s), comma-separated…">
+      <div class="action-row-status mono" id="addTermStatus"></div>
+      <div class="confirm-row">
+        <button class="link-btn mono" id="addTermCancelBtn">CANCEL</button>
+        <button class="danger-btn mono" id="addTermConfirmBtn" style="background: var(--amber); color: var(--ink);">DEFINE</button>
+      </div>
     </div>
 
     <div id="glossaryList"></div>
     <div class="history-empty mono" id="glossaryEmpty">No terms yet — they'll show up here as your summaries define them.</div>
+  </div>
+
+  <div class="drawer-overlay hidden" id="categoryPanel">
+    <div class="drawer-panel">
+      <h2>Categories</h2>
+      <div id="categoryPanelList"></div>
+    </div>
   </div>
 
   <div class="modal-overlay hidden" id="tokenModal">
@@ -1540,6 +1598,25 @@
     <div class="modal-card actions-modal-card">
       <button class="modal-close" id="actionsModalClose">&times;</button>
       <h2>Actions</h2>
+
+      <div class="action-row action-row-stack">
+        <div>
+          <div class="action-row-title">Profile</div>
+          <div class="action-row-desc mono">Your name, email, and password.</div>
+        </div>
+        <div class="preferences-row">
+          <input type="text" class="confirm-input mono" id="profileName" placeholder="Full name">
+          <input type="email" class="confirm-input mono" id="profileEmail" placeholder="Email">
+          <button class="link-btn mono" id="saveProfileBtn">SAVE</button>
+        </div>
+        <div class="action-row-status mono" id="profileStatus"></div>
+        <div class="preferences-row">
+          <input type="password" class="confirm-input mono" id="profileCurrentPassword" placeholder="Current password">
+          <input type="password" class="confirm-input mono" id="profileNewPassword" placeholder="New password">
+          <button class="link-btn mono" id="changePasswordBtn">UPDATE PASSWORD</button>
+        </div>
+        <div class="action-row-status mono" id="passwordStatus"></div>
+      </div>
 
       <div class="action-row action-row-stack">
         <div>
@@ -1753,6 +1830,9 @@
   const categoryFilter = document.getElementById('categoryFilter');
   const sortFilter = document.getElementById('sortFilter');
   const clearFiltersBtn = document.getElementById('clearFiltersBtn');
+  const categoryPanelBtn = document.getElementById('categoryPanelBtn');
+  const categoryPanel = document.getElementById('categoryPanel');
+  const categoryPanelList = document.getElementById('categoryPanelList');
   const historyList = document.getElementById('historyList');
   const historyEmpty = document.getElementById('historyEmpty');
   const historyTabs = document.querySelectorAll('.history-tab');
@@ -1762,6 +1842,12 @@
   const glossarySearch = document.getElementById('glossarySearch');
   const glossaryList = document.getElementById('glossaryList');
   const glossaryEmpty = document.getElementById('glossaryEmpty');
+  const addTermToggleBtn = document.getElementById('addTermToggleBtn');
+  const addTermBox = document.getElementById('addTermBox');
+  const addTermInput = document.getElementById('addTermInput');
+  const addTermStatus = document.getElementById('addTermStatus');
+  const addTermCancelBtn = document.getElementById('addTermCancelBtn');
+  const addTermConfirmBtn = document.getElementById('addTermConfirmBtn');
   let glossaryData = [];
 
   let currentStatusTab = 'unread';
@@ -2209,6 +2295,14 @@
   const deleteHistoryStatus = document.getElementById('deleteHistoryStatus');
   const deleteAccountConfirmInput = document.getElementById('deleteAccountConfirmInput');
   const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+  const profileName = document.getElementById('profileName');
+  const profileEmail = document.getElementById('profileEmail');
+  const saveProfileBtn = document.getElementById('saveProfileBtn');
+  const profileStatus = document.getElementById('profileStatus');
+  const profileCurrentPassword = document.getElementById('profileCurrentPassword');
+  const profileNewPassword = document.getElementById('profileNewPassword');
+  const changePasswordBtn = document.getElementById('changePasswordBtn');
+  const passwordStatus = document.getElementById('passwordStatus');
   const prefLength = document.getElementById('prefLength');
   const prefFormat = document.getElementById('prefFormat');
   const prefProvider = document.getElementById('prefProvider');
@@ -2248,12 +2342,59 @@
     }
   });
 
+  saveProfileBtn.addEventListener('click', async () => {
+    profileStatus.textContent = '';
+    try {
+      const res = await fetch('/auth/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name: profileName.value.trim(), email: profileEmail.value.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data && data.detail ? data.detail : '');
+      currentUser = data;
+      renderAuthArea();
+      profileStatus.textContent = 'Saved.';
+    } catch (e) {
+      profileStatus.textContent = e.message || 'Something went wrong — try again.';
+    }
+  });
+
+  changePasswordBtn.addEventListener('click', async () => {
+    passwordStatus.textContent = '';
+    try {
+      const res = await fetch('/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_password: profileCurrentPassword.value,
+          new_password: profileNewPassword.value,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data && data.detail ? data.detail : '');
+      profileCurrentPassword.value = '';
+      profileNewPassword.value = '';
+      passwordStatus.textContent = 'Password updated.';
+    } catch (e) {
+      passwordStatus.textContent = e.message || 'Something went wrong — try again.';
+    }
+  });
+
   function openActionsModal() {
     deleteHistoryConfirmInput.value = '';
     deleteAccountConfirmInput.value = '';
     deleteHistoryBtn.disabled = true;
     deleteAccountBtn.disabled = true;
     deleteHistoryStatus.textContent = '';
+    profileStatus.textContent = '';
+    passwordStatus.textContent = '';
+    profileCurrentPassword.value = '';
+    profileNewPassword.value = '';
+    if (currentUser) {
+      profileName.value = currentUser.full_name || '';
+      profileEmail.value = currentUser.email || '';
+    }
     actionsModal.classList.remove('hidden');
     loadPreferences();
   }
@@ -2372,6 +2513,45 @@
   backToMainFromGlossaryBtn.addEventListener('click', showMainView);
   glossarySearch.addEventListener('input', renderGlossaryList);
 
+  addTermToggleBtn.addEventListener('click', () => {
+    addTermBox.classList.remove('hidden');
+    addTermToggleBtn.classList.add('hidden');
+    addTermInput.value = '';
+    addTermStatus.textContent = '';
+  });
+
+  addTermCancelBtn.addEventListener('click', () => {
+    addTermBox.classList.add('hidden');
+    addTermToggleBtn.classList.remove('hidden');
+  });
+
+  addTermConfirmBtn.addEventListener('click', async () => {
+    const terms = addTermInput.value.split(',').map(t => t.trim()).filter(Boolean);
+    if (terms.length === 0) return;
+    addTermConfirmBtn.disabled = true;
+    addTermStatus.textContent = 'Defining…';
+    try {
+      // One API call defines the whole batch, however many terms it is.
+      const res = await fetch('/glossary/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terms }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data && data.detail ? data.detail : '');
+      const existing = new Set(glossaryData.map(t => t.term.toLowerCase()));
+      const fresh = data.filter(t => !existing.has(t.term.toLowerCase()));
+      glossaryData = [...glossaryData, ...fresh].sort((a, b) => a.term.localeCompare(b.term));
+      renderGlossaryList();
+      addTermBox.classList.add('hidden');
+      addTermToggleBtn.classList.remove('hidden');
+    } catch (e) {
+      addTermStatus.textContent = e.message || "Couldn't define those terms. Try again.";
+    } finally {
+      addTermConfirmBtn.disabled = false;
+    }
+  });
+
   historyTabs.forEach(tab => {
     tab.addEventListener('click', () => {
       currentStatusTab = tab.dataset.status;
@@ -2407,6 +2587,57 @@
       categoryFilter.value = current;
     } catch { /* leave as-is */ }
   }
+
+  // Backend orders CATEGORY most-specific-first (see app/summarizer.py's
+  // CATEGORY prompt), so the first label in the comma-joined string is
+  // this video's primary category — same logic as the mobile app's
+  // src/lib/categories.ts.
+  function primaryCategory(category) {
+    const first = (category || '').split(',')[0].trim();
+    return first || 'Other';
+  }
+
+  async function openCategoryPanel() {
+    categoryPanel.classList.remove('hidden');
+    categoryPanelList.innerHTML = '<div class="drawer-item">Loading…</div>';
+    try {
+      // Unfiltered fetch of the current status tab (ignoring search/date/
+      // category filters already applied) so the panel's counts reflect
+      // every category available to pick, not just the current view.
+      const res = await fetch(`/history?status=${currentStatusTab}&sort=newest`);
+      const items = res.ok ? await res.json() : [];
+      const counts = new Map();
+      for (const item of items) {
+        const cat = primaryCategory(item.category);
+        counts.set(cat, (counts.get(cat) || 0) + 1);
+      }
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const current = categoryFilter.value;
+      const rows = [`<button class="drawer-item${!current ? ' active' : ''}" data-cat="">
+        <span>All</span><span class="drawer-count">${items.length}</span>
+      </button>`];
+      for (const [cat, count] of sorted) {
+        rows.push(`<button class="drawer-item${current === cat ? ' active' : ''}" data-cat="${escapeHtml(cat)}">
+          <span>${escapeHtml(cat)}</span><span class="drawer-count">${count}</span>
+        </button>`);
+      }
+      categoryPanelList.innerHTML = rows.join('');
+      categoryPanelList.querySelectorAll('.drawer-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+          categoryFilter.value = btn.dataset.cat;
+          categoryPanel.classList.add('hidden');
+          loadHistory();
+        });
+      });
+    } catch {
+      categoryPanelList.innerHTML = '<div class="drawer-item">Couldn\'t load categories.</div>';
+    }
+  }
+
+  categoryPanelBtn.addEventListener('click', openCategoryPanel);
+  categoryPanel.addEventListener('click', (e) => {
+    if (e.target === categoryPanel) categoryPanel.classList.add('hidden');
+  });
 
   async function setHistoryStatus(id, status) {
     await fetch(`/history/${id}`, {
