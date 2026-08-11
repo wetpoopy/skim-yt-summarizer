@@ -459,7 +459,7 @@ def get_history(
         day_end = datetime.combine(date_filter, time.max, tzinfo=timezone.utc)
         query = query.where(Summary.created_at >= day_start, Summary.created_at <= day_end)
     if category:
-        query = query.where(Summary.category == category)
+        query = query.where(Summary.category.ilike(f"%{category}%"))
     if q:
         like = f"%{q}%"
         query = query.where(
@@ -563,7 +563,16 @@ def get_history_categories(user: User = Depends(require_user), db: Session = Dep
     rows = db.scalars(
         select(Summary.category).where(Summary.user_id == user.id).distinct()
     ).all()
-    return sorted(rows)
+    # Category values are comma-separated (a video can carry multiple
+    # labels) — split them back out so the filter dropdown offers each
+    # individual label rather than raw multi-label combinations.
+    labels: set[str] = set()
+    for row in rows:
+        for label in (row or "").split(","):
+            label = label.strip()
+            if label:
+                labels.add(label)
+    return sorted(labels)
 
 
 @app.get("/history/export")

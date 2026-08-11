@@ -220,12 +220,15 @@ def _structure_instructions(length: str, fmt: str) -> str:
         )
 
     # mixed (default) — TL;DR + bullets + takeaway
-    tl_dr = "A 2-3 sentence TL;DR" if length == "detailed" else "One-sentence TL;DR"
-    takeaway = "" if length == "brief" else "3. Anything notably actionable, surprising, or a key takeaway\n"
+    tl_dr = "a 2-3 sentence TL;DR" if length == "detailed" else "a one-sentence TL;DR"
+    takeaway = (
+        "" if length == "brief"
+        else ", ending with one extra bullet for anything notably actionable, surprising, or a key takeaway"
+    )
     return (
-        f"1. {tl_dr}\n"
-        f"2. {lo}-{hi} bullet points covering the main content\n"
-        f"{takeaway}"
+        f"Open with {tl_dr} as a plain sentence — no numbering, no bullet, no bold label, no "
+        "leading list marker of any kind. Then a blank line, then bullet points (using '-') "
+        f"covering the main content ({lo}-{hi} bullets){takeaway}."
     )
 
 
@@ -242,11 +245,13 @@ def build_prompt(
     structure = _structure_instructions(length, format)
 
     header_lines = [
-        f"CATEGORY: <pick the SINGLE most specific matching label from: {category_list}. "
-        "Prefer the narrowest label that genuinely fits over a broader nearby one — e.g. "
-        "a video about a specific programming language or framework is 'Software Development', "
-        "not 'Other'; a video about budgeting or saving is 'Personal Finance', not 'Business'. "
-        "Only use 'Other' if nothing on the list is a reasonable fit.>"
+        f"CATEGORY: <pick EVERY label from this list that genuinely applies: {category_list}. "
+        "Most videos fit 1-2 labels, occasionally 3 — list only ones that are truly relevant, "
+        "most-relevant first, separated by ', '. Prefer narrow specific labels over broad nearby "
+        "ones — e.g. a video about a specific programming language or framework is 'Software "
+        "Development', not 'Other'; a video about budgeting or saving is 'Personal Finance', not "
+        "'Business'. Only use 'Other' if nothing on the list is a reasonable fit, and never pair "
+        "'Other' with another label.>"
     ]
 
     if title:
@@ -283,7 +288,9 @@ def build_prompt(
 
     if comments:
         header_lines.append(
-            "SENTIMENT: <one of Positive, Mostly Positive, Mixed, Mostly Negative, Negative> "
+            "SENTIMENT: <one of Positive, Mostly Positive, Mostly Negative, Negative — pick "
+            "whichever side the comments lean toward overall, even if opinion is genuinely "
+            "split; never answer with a neutral/'mixed' label, always lean one way> "
             "— <1-2 sentence blurb on common themes in the comments>"
         )
         header_lines.append(

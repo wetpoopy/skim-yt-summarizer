@@ -473,6 +473,41 @@
     letter-spacing: 0.04em;
   }
 
+  .labeled-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .labeled-row:empty { display: none; }
+  .labeled-row:has(.pill-wrap:empty) { display: none; }
+  .labeled-row:has(#sentimentPillContainer:empty) { display: none; }
+
+  .row-label {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.03em;
+  }
+
+  .pill-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill-wrap:empty { display: none; }
+
+  .history-card-channel {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+
+  .history-card-channel:empty { display: none; }
+
   .sentiment-pill {
     font-size: 10px;
     border-radius: 20px;
@@ -1252,11 +1287,20 @@
 
   .result-title:empty { display: none; }
 
+  .result-channel {
+    font-size: 12px;
+    color: var(--slate);
+    letter-spacing: 0.02em;
+    margin-bottom: 4px;
+  }
+
+  .result-channel:empty { display: none; }
+
   .result-submeta {
     font-size: 11px;
     color: var(--slate);
     letter-spacing: 0.02em;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 
   .result-submeta:empty { display: none; }
@@ -1391,12 +1435,19 @@
       <div class="result-card">
         <div class="already-summarized-banner" id="alreadySummarizedBanner"></div>
         <div class="result-title" id="resultTitle"></div>
+        <div class="result-channel mono" id="resultChannel"></div>
         <div class="result-submeta mono" id="resultSubmeta"></div>
+        <div class="labeled-row" id="categoriesRow">
+          <span class="row-label mono">Categories:</span>
+          <span class="pill-wrap" id="categoryPills"></span>
+        </div>
+        <div class="labeled-row" id="sentimentRow">
+          <span class="row-label mono">Sentiment:</span>
+          <span id="sentimentPillContainer"></span>
+        </div>
         <div class="title-answer" id="titleAnswer"></div>
         <div class="result-meta">
           <span class="video-id mono" id="videoId"></span>
-          <span class="category-pill mono" id="categoryPill"></span>
-          <span id="sentimentPillContainer"></span>
           <button class="copy-btn mono" id="copyBtn">COPY</button>
         </div>
         <div class="summary-view-container">
@@ -1660,9 +1711,10 @@
   const result = document.getElementById('result');
   const summaryText = document.getElementById('summaryText');
   const videoId = document.getElementById('videoId');
-  const categoryPill = document.getElementById('categoryPill');
   const resultTitle = document.getElementById('resultTitle');
+  const resultChannel = document.getElementById('resultChannel');
   const resultSubmeta = document.getElementById('resultSubmeta');
+  const categoryPills = document.getElementById('categoryPills');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
   const highlightBox = document.getElementById('highlightBox');
@@ -1794,18 +1846,18 @@
     return `<a href="${watchUrl(item)}" target="_blank" rel="noopener" onclick="return confirm('Open this video on YouTube?')">${escapeHtml(item.title)}</a>`;
   }
 
-  function buildSubmeta(item) {
+  function buildChannelLine(item) {
+    if (!item.channel) return '';
+    const channelText = escapeHtml(item.channel);
+    const subs = formatCount(item.subscriber_count);
+    const channelLabel = subs != null ? `${channelText} (${subs} subscribers)` : channelText;
+    return item.channel_id
+      ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelLabel}</a>`
+      : channelLabel;
+  }
+
+  function buildMetaLine(item) {
     const parts = [];
-    if (item.channel) {
-      const channelText = escapeHtml(item.channel);
-      const subs = formatCount(item.subscriber_count);
-      const channelLabel = subs != null ? `${channelText} (${subs} subscribers)` : channelText;
-      parts.push(
-        item.channel_id
-          ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelLabel}</a>`
-          : channelLabel
-      );
-    }
     if (item.published_at) {
       const d = new Date(item.published_at);
       if (!isNaN(d.getTime())) {
@@ -1821,6 +1873,12 @@
     const comments = formatCount(item.comment_count);
     if (comments != null) parts.push(`${comments} comments`);
     return parts.join(' · ');
+  }
+
+  function categoryPillsHtml(category) {
+    if (!category) return '';
+    return category.split(',').map(c => c.trim()).filter(Boolean)
+      .map(c => `<span class="category-pill mono">${escapeHtml(c)}</span>`).join('');
   }
 
   function chaptersHtml(item) {
@@ -2445,22 +2503,27 @@
         }
 
         const timeOfDay = created.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-        const submeta = buildSubmeta(item);
+        const channelLine = buildChannelLine(item);
+        const metaLine = buildMetaLine(item);
 
         const card = document.createElement('div');
         card.className = 'history-card';
         card.innerHTML = `
           <div class="history-card-header">
             ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : ''}
+            ${channelLine ? `<div class="history-card-channel mono">${channelLine}</div>` : ''}
+            ${metaLine ? `<div class="history-card-submeta mono">${metaLine}</div>` : ''}
+            <div class="labeled-row">
+              <span class="row-label mono">Categories:</span>
+              <span class="pill-wrap">${categoryPillsHtml(item.category)}</span>
+            </div>
+            ${item.sentiment_label ? `<div class="labeled-row"><span class="row-label mono">Sentiment:</span>${sentimentPillHtml(item)}</div>` : ''}
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
-              <span class="category-pill mono">${item.category}</span>
               ${item.playlist_title ? `<span class="playlist-badge mono">📼 ${escapeHtml(item.playlist_title)}</span>` : ''}
-              ${sentimentPillHtml(item)}
               <span class="history-card-time mono">${timeOfDay}</span>
               <button class="history-card-toggle mono">EXPAND ▾</button>
             </div>
-            ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
           <div class="history-card-summary">
             <div class="summary-view-container">
@@ -2698,9 +2761,10 @@
       videoId.textContent = data.video_id;
       alreadySummarizedBanner.textContent = data.already_summarized
         ? '✓ You already summarized this video — showing your saved summary.' : '';
-      categoryPill.textContent = data.category || '';
       resultTitle.innerHTML = titleLinkHtml(data);
-      resultSubmeta.innerHTML = buildSubmeta(data);
+      resultChannel.innerHTML = buildChannelLine(data);
+      resultSubmeta.innerHTML = buildMetaLine(data);
+      categoryPills.innerHTML = categoryPillsHtml(data.category);
       titleAnswer.textContent = data.title_answer || '';
       summaryText.textContent = data.summary;
       if (data.key_points && data.key_points.length > 0) {
