@@ -420,6 +420,28 @@
 
   .sentiment-blurb:empty { display: none; }
 
+  .counterpoint-box {
+    font-size: 12.5px;
+    color: var(--paper);
+    line-height: 1.5;
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-left: 2px solid var(--danger);
+    background: rgba(229, 72, 77, 0.06);
+    border-radius: 0 6px 6px 0;
+  }
+
+  .counterpoint-box:empty { display: none; }
+
+  .counterpoint-label {
+    font-size: 10px;
+    color: var(--danger);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: block;
+    margin-bottom: 4px;
+  }
+
   /* ---------- auth modal ---------- */
   .modal-overlay {
     position: fixed;
@@ -1206,6 +1228,7 @@
         <div class="summary-text" id="summaryText"></div>
         <div id="chaptersContainer"></div>
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
+        <div class="counterpoint-box" id="counterpointBox"></div>
       </div>
     </div>
   </div>
@@ -1435,6 +1458,7 @@
   const resultSubmeta = document.getElementById('resultSubmeta');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
+  const counterpointBox = document.getElementById('counterpointBox');
   const titleAnswer = document.getElementById('titleAnswer');
   const alreadySummarizedBanner = document.getElementById('alreadySummarizedBanner');
   const chaptersContainer = document.getElementById('chaptersContainer');
@@ -2095,7 +2119,7 @@
             </div>
             ${submeta ? `<div class="history-card-submeta mono">${submeta}</div>` : ''}
           </div>
-          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}</div>
+          <div class="history-card-summary">${item.summary.replace(/</g, '&lt;')}${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}</div>
         `;
 
         const toggleBtn = card.querySelector('.history-card-toggle');
@@ -2327,6 +2351,8 @@
       chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       sentimentBlurb.textContent = data.sentiment_blurb || '';
+      counterpointBox.innerHTML = data.counterpoint
+        ? `<span class="counterpoint-label mono">The other side</span>${escapeHtml(data.counterpoint)}` : '';
       result.classList.add('visible');
 
       if (typeof data.remaining_today === 'number') {

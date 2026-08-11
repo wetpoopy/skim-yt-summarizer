@@ -261,6 +261,14 @@ def build_prompt(
             "SENTIMENT: <one of Positive, Mostly Positive, Mixed, Mostly Negative, Negative> "
             "— <1-2 sentence blurb on common themes in the comments>"
         )
+        header_lines.append(
+            "COUNTERPOINT: <scan ALL the comments below (not just the highest-liked) for the "
+            "strongest substantive criticism, disagreement, correction, or counterargument to "
+            "the video's claims — the 'other side' someone deciding whether to trust this video "
+            "would want to know about. 1-2 sentences summarizing it. If the comments raise no "
+            "real criticism (just praise, jokes, or unrelated chatter), write NONE. Do not "
+            "invent a counterpoint that isn't actually present in the comments.>"
+        )
 
     header_lines.append("---")
     header = "\n".join(header_lines)
@@ -279,8 +287,10 @@ def build_prompt(
     if comments:
         comment_lines = "\n".join(f'[{c["like_count"]} likes] "{c["text"]}"' for c in comments)
         extra_context += (
-            "\n\nTOP COMMENTS (shown with like counts — weight your sentiment assessment "
-            f"toward the higher-liked ones; also check these for timestamp callouts):\n{comment_lines}"
+            "\n\nTOP COMMENTS (shown with like counts — weight your overall sentiment "
+            "assessment toward the higher-liked ones, but read every comment when looking "
+            f"for a counterpoint since criticism isn't always the most-liked; also check "
+            f"these for timestamp callouts):\n{comment_lines}"
         )
 
     title_line = f'the video titled "{title}"' if title else "the following YouTube video"
@@ -324,6 +334,7 @@ def _parse_response(raw_text: str) -> dict:
     answer = None
     sentiment_label = None
     sentiment_blurb = None
+    counterpoint = None
     chapters = []
     idx = 0
 
@@ -359,6 +370,10 @@ def _parse_response(raw_text: str) -> dict:
             sentiment_label = label.strip() or None
             sentiment_blurb = blurb.strip() or None
             idx += 1
+        elif upper.startswith("COUNTERPOINT:"):
+            val = stripped.split(":", 1)[1].strip()
+            counterpoint = None if not val or val.upper() == "NONE" else val
+            idx += 1
         elif upper.startswith("TIMESTAMPS:"):
             idx += 1
             while idx < len(lines):
@@ -380,6 +395,7 @@ def _parse_response(raw_text: str) -> dict:
         "answer": answer,
         "sentiment_label": sentiment_label,
         "sentiment_blurb": sentiment_blurb,
+        "counterpoint": counterpoint,
         "chapters": chapters,
     }
 
@@ -397,7 +413,8 @@ def summarize(
 ) -> dict:
     """
     Summarize a transcript with the chosen provider. Returns
-    {"summary", "category", "answer", "sentiment_label", "sentiment_blurb", "chapters"}.
+    {"summary", "category", "answer", "sentiment_label", "sentiment_blurb",
+    "counterpoint", "chapters"}.
     The optional fields are None/[] unless their inputs were provided.
     Raises SummarizerError on failure.
     """

@@ -17,7 +17,7 @@ YOUTUBE_COMMENTS_API_URL = "https://www.googleapis.com/youtube/v3/commentThreads
 
 MAX_COMMENT_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = [1, 2]
-DEFAULT_MAX_RESULTS = 25
+DEFAULT_MAX_RESULTS = 40
 
 
 def get_top_comments(video_id: str, max_results: int = DEFAULT_MAX_RESULTS) -> list[dict]:

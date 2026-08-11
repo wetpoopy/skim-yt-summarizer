@@ -64,6 +64,7 @@ class Summary(Base):
     subscriber_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    counterpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     chapters_json: Mapped[str | None] = mapped_column(Text, nullable=True)

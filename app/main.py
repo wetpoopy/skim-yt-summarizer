@@ -111,6 +111,7 @@ class SummarizeResponse(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    counterpoint: str | None = None
     title_answer: str | None = None
     chapters: list[Chapter] = []
     playlist_id: str | None = None
@@ -136,6 +137,7 @@ class HistoryItem(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    counterpoint: str | None = None
     title_answer: str | None = None
     chapters: list[Chapter] = []
     status: str = "unread"
@@ -189,6 +191,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         chapters=[Chapter(**c) for c in chapters],
         playlist_id=r.playlist_id,
@@ -293,6 +296,7 @@ def summarize_video(
             subscriber_count=subscriber_count,
             sentiment_label=result.get("sentiment_label"),
             sentiment_blurb=result.get("sentiment_blurb"),
+            counterpoint=result.get("counterpoint"),
             title_answer=result.get("answer"),
             chapters_json=json.dumps(chapters) if chapters else None,
             status="unread",
@@ -320,6 +324,7 @@ def summarize_video(
         subscriber_count=subscriber_count,
         sentiment_label=result.get("sentiment_label"),
         sentiment_blurb=result.get("sentiment_blurb"),
+        counterpoint=result.get("counterpoint"),
         title_answer=result.get("answer"),
         chapters=chapters,
         playlist_id=body.playlist_id,
@@ -347,6 +352,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         chapters=chapters,
         status=r.status or "unread",
@@ -488,6 +494,7 @@ def export_history(
                     "duration_seconds": r.duration_seconds,
                     "sentiment_label": r.sentiment_label,
                     "sentiment_blurb": r.sentiment_blurb,
+                    "counterpoint": r.counterpoint,
                     "title_answer": r.title_answer,
                     "chapters": json.loads(r.chapters_json) if r.chapters_json else [],
                     "status": r.status or "unread",
@@ -508,7 +515,7 @@ def export_history(
             [
                 "created_at", "video_id", "title", "title_answer", "channel", "subscriber_count",
                 "category", "language", "view_count", "like_count", "comment_count", "duration_seconds",
-                "sentiment_label", "sentiment_blurb", "status", "url", "summary",
+                "sentiment_label", "sentiment_blurb", "counterpoint", "status", "url", "summary",
             ]
         )
         for r in rows:
@@ -517,7 +524,7 @@ def export_history(
                     r.created_at.isoformat(), r.video_id, r.title, r.title_answer, r.channel,
                     r.subscriber_count, r.category, r.language, r.view_count, r.like_count,
                     r.comment_count, r.duration_seconds, r.sentiment_label, r.sentiment_blurb,
-                    r.status or "unread", r.url, r.summary_text,
+                    r.counterpoint, r.status or "unread", r.url, r.summary_text,
                 ]
             )
         content = buf.getvalue()
@@ -549,6 +556,9 @@ def export_history(
             if r.sentiment_label:
                 lines.append("")
                 lines.append(f"**Comment sentiment:** {r.sentiment_label} — {r.sentiment_blurb or ''}")
+            if r.counterpoint:
+                lines.append("")
+                lines.append(f"**The other side:** {r.counterpoint}")
             lines.append("")
         content = "\n".join(lines)
         media_type = "text/markdown"
