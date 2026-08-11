@@ -36,7 +36,7 @@ from app.db import SessionLocal, get_db, init_db
 from app.digest import send_daily_digests
 from app.models import CustomGlossaryTerm, Summary, User
 from app.transcript import extract_video_id, get_transcript, TranscriptError
-from app.summarizer import define_terms, summarize, QuotaExceededError, SummarizerError
+from app.summarizer import define_terms, normalize_category, summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
 from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
 from app.youtube_comments import get_top_comments
@@ -303,6 +303,13 @@ def summarize_video(
     chapters = result.get("chapters") or []
     key_points = result.get("key_points") or []
     glossary = result.get("glossary") or []
+
+    glossary_text = " ".join(f"{g['term']} {g.get('definition', '')}" for g in glossary)
+    result["category"] = normalize_category(
+        result["category"],
+        title=metadata.get("title"),
+        extra_text=f"{result.get('summary', '')} {glossary_text}",
+    )
 
     saved = False
     if user is not None:

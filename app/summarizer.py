@@ -15,7 +15,7 @@ from anthropic import Anthropic
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 OPENAI_MODEL = "gpt-4o"
 GEMINI_MODEL = "gemini-2.0-flash"
-MAX_TOKENS = 2048
+MAX_TOKENS = 8192
 
 
 class SummarizerError(Exception):
@@ -147,6 +147,39 @@ CATEGORIES = [
     "Other",
 ]
 
+_RUNESCAPE_SIGNAL_RE = re.compile(r"\brunescape\b|\bosrs\b|\bjagex\b", re.IGNORECASE)
+
+
+def normalize_category(raw_category: str, title: str | None = None, extra_text: str = "") -> str:
+    """
+    A deterministic safety net on top of the CATEGORY prompt instructions,
+    not a replacement for them: drops any label the model invented outside
+    CATEGORIES (nothing stops it hallucinating one), and force-applies two
+    rules that are cheap to guarantee exactly rather than hope the model
+    remembers every time — 'Agents' whenever the title says so, and
+    'Runescape' whenever OSRS-specific terms show up anywhere.
+    """
+    valid = {c.lower(): c for c in CATEGORIES}
+    cats = []
+    for part in raw_category.split(","):
+        canonical = valid.get(part.strip().lower())
+        if canonical and canonical not in cats:
+            cats.append(canonical)
+    if not cats:
+        cats = ["Other"]
+
+    title_lower = (title or "").lower()
+    if "agent" in title_lower:
+        cats = [c for c in cats if c != "Agents"]
+        cats.insert(0, "Agents")
+
+    if _RUNESCAPE_SIGNAL_RE.search(f"{title or ''} {extra_text}"):
+        cats = [c for c in cats if c != "Runescape"]
+        cats.insert(0, "Runescape")
+
+    return ", ".join(cats)
+
+
 _BULLET_COUNTS = {"brief": (1, 3), "standard": (4, 8), "detailed": (6, 10)}
 
 _TIMESTAMP_HINT_RE = re.compile(r"\b\d{1,2}:\d{2}(:\d{2})?\b")
@@ -248,8 +281,10 @@ def build_prompt(
         f"CATEGORY: <pick EVERY label from this list that genuinely applies: {category_list}. "
         "Most videos fit 1-2 labels, occasionally 3 — list only ones that are truly relevant, "
         "MOST-SPECIFIC FIRST, separated by ', '. The first label you list becomes this video's "
-        "primary category, so ordering matters: 'Runescape' always goes first when it applies "
-        "(it's a narrower, dedicated label than any general gaming one); 'Agents' is more "
+        "primary category, so ordering matters: 'Runescape' always goes first when it applies — "
+        "this includes any video substantially about RuneScape/Old School RuneScape content even "
+        "if the word 'RuneScape' is never said outright (e.g. OSRS bosses, minigames, quests, "
+        "skilling, the Grand Exchange, Jagex, or other OSRS-specific slang); 'Agents' is more "
         "specific than 'AI & Machine Learning' and should come first when both apply; in general, "
         "prefer the narrowest label that genuinely fits over a broader nearby one — e.g. a video "
         "about a specific programming language or framework is 'Software Development', not "
