@@ -3067,6 +3067,22 @@
   });
 
   urlInput.addEventListener('input', updateSubmitLabel);
+
+  // On platforms where navigator.clipboard.readText() is blocked (iOS
+  // Safari denies it outright — a platform policy, not something a
+  // script can override), the click handler below falls back to
+  // focusing the field, which surfaces iOS's own native "Paste"
+  // suggestion above the keyboard. This auto-submits the instant that
+  // system paste lands, so the fallback is "tap button, tap Paste" (2
+  // taps) instead of needing a third tap back on Summarize.
+  urlInput.addEventListener('paste', () => {
+    setTimeout(() => {
+      const val = urlInput.value.trim();
+      if (val && (val.includes('youtube.com') || val.includes('youtu.be'))) {
+        form.requestSubmit();
+      }
+    }, 50);
+  });
   updateSubmitLabel();
 
   // Reads the clipboard when the field is empty so one click of the
