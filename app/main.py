@@ -893,7 +893,10 @@ def serve_index():
     CSS/JS, since everything is inline in this one file) after a fix
     has already shipped.
     """
-    return FileResponse(_static_dir / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
+    return FileResponse(
+        _static_dir / "index.html",
+        headers={"Cache-Control": "no-cache, must-revalidate", "X-TLDW-Route": "explicit-index"},
+    )
 
 
 # Mounted last and at "/" so it only catches requests that don't match
