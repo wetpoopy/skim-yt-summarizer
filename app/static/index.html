@@ -2141,23 +2141,50 @@
   // reader can get a definition inline instead of hunting the GLOSSARY
   // tab for it. Longest terms first so a multi-word term is matched
   // whole before a shorter term nested inside it grabs part of it.
+  //
+  // Finds every match in ONE pass over the original escaped text, then
+  // builds the output from those spans — it must not do what an earlier
+  // version did (sequential String.replace per term, each pass over the
+  // cumulative HTML): once term A's definition/example text happened to
+  // contain term B, term B's later pass matched inside term A's already-
+  // inserted data-def/data-example attribute values, corrupting the
+  // markup (broken attributes, definition text leaking onto the page).
   function linkifyGlossary(rawText, glossary) {
-    let html = escapeHtml(rawText || '');
+    const escaped = escapeHtml(rawText || '');
     const terms = (glossary || []).filter(g => g.term && g.term.trim());
-    if (!terms.length) return html;
+    if (!terms.length) return escaped;
     const sorted = [...terms].sort((a, b) => b.term.length - a.term.length);
+    const matches = [];
     for (const g of sorted) {
       const escTerm = escapeHtml(g.term.trim());
       if (!escTerm) continue;
-      const defAttr = escapeAttr(g.definition || '');
-      const exAttr = escapeAttr(g.example || '');
       const pattern = new RegExp(`(?<![\\w>])(${escapeRegExp(escTerm)})(?![\\w])`, 'gi');
+      let m;
+      while ((m = pattern.exec(escaped))) {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (matches.some(x => start < x.end && end > x.start)) continue; // overlaps a longer term already claimed
+        matches.push({ start, end, term: g });
+      }
+    }
+    if (!matches.length) return escaped;
+    matches.sort((a, b) => a.start - b.start);
+    let out = '';
+    let cursor = 0;
+    for (const m of matches) {
+      out += escaped.slice(cursor, m.start);
+      const text = escaped.slice(m.start, m.end);
+      const escTerm = escapeHtml(m.term.term.trim());
+      const defAttr = escapeAttr(m.term.definition || '');
+      const exAttr = escapeAttr(m.term.example || '');
       // Deliberately a <span>, not a <button> — this can end up nested
       // inside the SHORT view's key-point-toggle <button>, and nested
       // <button>s are invalid HTML that browsers silently mangle.
-      html = html.replace(pattern, (m) => `<span class="gloss-term" role="button" tabindex="0" data-term="${escTerm}" data-def="${defAttr}" data-example="${exAttr}">${m}</span>`);
+      out += `<span class="gloss-term" role="button" tabindex="0" data-term="${escTerm}" data-def="${defAttr}" data-example="${exAttr}">${text}</span>`;
+      cursor = m.end;
     }
-    return html;
+    out += escaped.slice(cursor);
+    return out;
   }
 
   // LONG view: same collapsible-bullet UX as SHORT instead of one dense
