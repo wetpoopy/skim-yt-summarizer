@@ -1410,6 +1410,19 @@
   button:active { transform: scale(0.98); }
   button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
+  /* Mobile Safari/Chrome grant a tapped button :focus-visible the same
+     as a real keyboard tab — on the SHORT/LONG toggle and key-point
+     bullets that draws a bright 2px amber box around the whole (often
+     multi-line, full-width) row on every tap, reading as the text
+     itself getting "highlighted"/"washed out". These already show a
+     clear active state via color (amber arrow/label), so the outline
+     isn't pulling extra weight here. */
+  .key-point-toggle:focus-visible,
+  .view-toggle-btn:focus-visible,
+  .gloss-term:focus-visible {
+    outline: none;
+  }
+
   button:disabled {
     background: var(--amber-dim);
     color: #8A7237;
