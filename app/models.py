@@ -51,7 +51,12 @@ class Summary(Base):
     video_id: Mapped[str] = mapped_column(String(32), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Holds a comma-joined list of labels ("Gadgets & Consumer Tech,
+    # Startups & Tech Business, Product Reviews"), not a single one — at
+    # String(64) any 3-label result overflowed and killed the whole save
+    # with a StringDataRightTruncation, which is what made summarizing
+    # fail for most videos.
+    category: Mapped[str] = mapped_column(String(255), nullable=False)
     language: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 

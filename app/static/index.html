@@ -276,6 +276,38 @@
 
   .queue-dismiss-btn:hover { background: var(--line); color: var(--paper); }
 
+  .queue-card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .queue-card-bottom .queue-time { margin-top: 0; }
+
+  .queue-retry-btn {
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .queue-retry-btn:hover { background: var(--amber-dim); color: var(--paper); }
+
+  .queue-retry-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: transparent;
+    color: var(--slate);
+    border-color: var(--line);
+  }
+
   .history-card-title {
     font-size: 18px;
     font-weight: 700;
@@ -2195,6 +2227,20 @@
   // inserted data-def/data-example attribute values, corrupting the
   // markup (broken attributes, definition text leaking onto the page).
   function linkifyGlossary(rawText, glossary) {
+    // Glossary linking is a nice-to-have layered on top of the summary
+    // text. It must never be able to take the summary itself down with
+    // it — a throw in here used to bubble all the way out to the
+    // submit handler's catch and render as "summarizing failed", hiding
+    // a summary that had actually been generated and saved just fine.
+    try {
+      return linkifyGlossaryUnsafe(rawText, glossary);
+    } catch (err) {
+      console.error('glossary linkify failed, falling back to plain text', err);
+      return escapeHtml(rawText || '');
+    }
+  }
+
+  function linkifyGlossaryUnsafe(rawText, glossary) {
     const escaped = escapeHtml(rawText || '');
     const terms = (glossary || []).filter(g => g.term && g.term.trim());
     if (!terms.length) return escaped;
@@ -2203,13 +2249,25 @@
     for (const g of sorted) {
       const escTerm = escapeHtml(g.term.trim());
       if (!escTerm) continue;
-      const pattern = new RegExp(`(?<![\\w>])(${escapeRegExp(escTerm)})(?![\\w])`, 'gi');
+      // Deliberately NOT using a lookbehind ((?<!...)) for the left-hand
+      // boundary: WebKit only supports lookbehind from iOS 16.4 on, and
+      // on anything older `new RegExp` throws outright ("The string did
+      // not match the expected pattern"), which took down the whole
+      // summary render. Match an optional leading boundary char as a
+      // real capture group instead and skip past it — same result,
+      // supported everywhere.
+      const pattern = new RegExp(`(^|[^\\w>])(${escapeRegExp(escTerm)})(?![\\w])`, 'gi');
       let m;
       while ((m = pattern.exec(escaped))) {
-        const start = m.index;
-        const end = start + m[0].length;
+        const start = m.index + m[1].length; // skip the boundary char we matched
+        const end = start + m[2].length;
         if (matches.some(x => start < x.end && end > x.start)) continue; // overlaps a longer term already claimed
         matches.push({ start, end, term: g });
+        // Overlapping matches can share a boundary char, so rewind the
+        // scan position to just after the term itself rather than after
+        // the whole match — otherwise a term immediately following
+        // another gets skipped.
+        pattern.lastIndex = end;
       }
     }
     if (!matches.length) return escaped;
@@ -2952,7 +3010,10 @@
           <button class="queue-dismiss-btn mono" data-id="${item.id}" title="Dismiss">✕</button>
         </div>
         <div class="queue-status-line mono">✗ Failed — ${escapeHtml(item.error || 'something went wrong')}</div>
-        <div class="queue-time mono">${when}</div>
+        <div class="queue-card-bottom">
+          <span class="queue-time mono">${when}</span>
+          <button class="queue-retry-btn mono" data-id="${item.id}">RETRY</button>
+        </div>
       </div>`;
     }
     // Processing items can sit for a while on a slow video, but the user
@@ -2979,6 +3040,17 @@
   }
 
   queueList.addEventListener('click', async (e) => {
+    const retryBtn = e.target.closest('.queue-retry-btn');
+    if (retryBtn) {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'RETRYING…';
+      try {
+        await fetch(`/summarize/pending/${retryBtn.dataset.id}/retry`, { method: 'POST' });
+      } finally {
+        loadQueue();
+      }
+      return;
+    }
     const btn = e.target.closest('.queue-dismiss-btn');
     if (!btn) return;
     await fetch(`/summarize/pending/${btn.dataset.id}`, { method: 'DELETE' });

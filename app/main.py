@@ -487,6 +487,40 @@ def dismiss_pending_summary(pending_id: int, user: User = Depends(require_user),
     return {"ok": True}
 
 
+@app.post("/summarize/pending/{pending_id}/retry", response_model=PendingSummaryOut)
+def retry_pending_summary(
+    pending_id: int,
+    background_tasks: BackgroundTasks,
+    x_anthropic_key: str | None = Header(default=None),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Re-run a job that failed, reusing the same row so the queue doesn't
+    accumulate a duplicate card per attempt. Some failures are transient
+    (a flaky metadata/comments fetch, a provider hiccup) and just work on
+    a second run; others are permanent for that video (captions
+    disabled), and retrying those simply fails the same way again, which
+    is fine — the user can see that and dismiss it.
+    """
+    row = db.scalar(select(PendingSummary).where(PendingSummary.id == pending_id, PendingSummary.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if row.status == "processing":
+        raise HTTPException(status_code=409, detail="That job is already running.")
+
+    row.status = "processing"
+    row.error = None
+    db.commit()
+    db.refresh(row)
+
+    client = Anthropic(api_key=x_anthropic_key) if x_anthropic_key else None
+    background_tasks.add_task(
+        _run_summarize_in_background, SummarizeRequest(url=row.url), user.id, row.id, client
+    )
+    return row
+
+
 def _row_to_history_item(r: Summary) -> HistoryItem:
     chapters = json.loads(r.chapters_json) if r.chapters_json else []
     key_points = json.loads(r.key_points_json) if r.key_points_json else []

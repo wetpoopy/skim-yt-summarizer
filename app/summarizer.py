@@ -150,6 +150,9 @@ CATEGORIES = [
 _RUNESCAPE_SIGNAL_RE = re.compile(r"\brunescape\b|\bosrs\b|\bjagex\b", re.IGNORECASE)
 _API_TITLE_RE = re.compile(r"\bapi\b", re.IGNORECASE)
 
+# Must stay <= the Summary.category column width in app/models.py.
+MAX_CATEGORY_LEN = 255
+
 
 def normalize_category(raw_category: str, title: str | None = None, extra_text: str = "") -> str:
     """
@@ -185,7 +188,15 @@ def normalize_category(raw_category: str, title: str | None = None, extra_text: 
         cats = [c for c in cats if c != "Runescape"]
         cats.insert(0, "Runescape")
 
-    return ", ".join(cats)
+    # Never emit more than the category column can hold. Labels are ordered
+    # most-significant-first by the rules above, so dropping from the tail
+    # loses the least important ones. Losing a trailing label is a far better
+    # outcome than the DB write blowing up and taking the whole summary with
+    # it, which is exactly what used to happen.
+    while len(", ".join(cats)) > MAX_CATEGORY_LEN and len(cats) > 1:
+        cats.pop()
+
+    return ", ".join(cats)[:MAX_CATEGORY_LEN]
 
 
 _BULLET_COUNTS = {"brief": (1, 3), "standard": (4, 8), "detailed": (6, 10)}
