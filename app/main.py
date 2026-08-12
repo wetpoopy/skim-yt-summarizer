@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Literal
 
 from anthropic import Anthropic
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -225,37 +225,16 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
     )
 
 
-@app.post("/summarize", response_model=SummarizeResponse)
-def summarize_video(
-    body: SummarizeRequest,
-    request: Request,
-    x_anthropic_key: str | None = Header(default=None),
-    user: User | None = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    remaining = None
-
-    # Bring-your-own-key callers and logged-in users skip the shared rate
-    # limit — it exists to cap cost exposure from anonymous visitors, not
-    # to throttle the account owner's own usage.
-    if x_anthropic_key:
-        client = Anthropic(api_key=x_anthropic_key)
-    elif user is not None:
-        client = None  # summarize() will build the server's own client
-    else:
-        client_ip = request.client.host if request.client else "unknown"
-        allowed, remaining = check_and_record(client_ip, FREE_TIER_DAILY_LIMIT)
-        if not allowed:
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"Free tier limit of {FREE_TIER_DAILY_LIMIT} summaries/day reached. "
-                    "Try again tomorrow, or pass your own Claude API key via the "
-                    "x-anthropic-key header."
-                ),
-            )
-        client = None  # summarize() will build the server's own client
-
+def _summarize_and_save(
+    body: SummarizeRequest, user: User | None, db: Session, client: Anthropic | None
+) -> SummarizeResponse:
+    """
+    The actual summarize pipeline — transcript, metadata, comments, the LLM
+    call, and (for logged-in users) saving to history. Raises TranscriptError
+    / QuotaExceededError / SummarizerError on failure; callers decide how to
+    surface those (HTTP error for the synchronous endpoint, silently dropped
+    for the background/queued path, which has no one left to answer).
+    """
     if user is not None:
         try:
             existing_video_id = extract_video_id(body.url)
@@ -266,12 +245,9 @@ def summarize_video(
                 select(Summary).where(Summary.user_id == user.id, Summary.video_id == existing_video_id)
             )
             if existing is not None:
-                return _summary_to_response(existing, remaining=remaining)
+                return _summary_to_response(existing, remaining=None)
 
-    try:
-        transcript_data = get_transcript(body.url)
-    except TranscriptError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    transcript_data = get_transcript(body.url)
 
     length = (user.summary_length if user else None) or "standard"
     fmt = (user.summary_format if user else None) or "mixed"
@@ -283,22 +259,17 @@ def summarize_video(
         get_channel_subscriber_count(metadata["channel_id"]) if metadata.get("channel_id") else None
     )
 
-    try:
-        result = summarize(
-            transcript_data["text"],
-            client=client,
-            length=length,
-            format=fmt,
-            comments=comments,
-            title=metadata.get("title"),
-            description=metadata.get("description"),
-            provider=provider,
-            transcript_segments=transcript_data.get("segments"),
-        )
-    except QuotaExceededError as e:
-        raise HTTPException(status_code=429, detail=str(e))
-    except SummarizerError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    result = summarize(
+        transcript_data["text"],
+        client=client,
+        length=length,
+        format=fmt,
+        comments=comments,
+        title=metadata.get("title"),
+        description=metadata.get("description"),
+        provider=provider,
+        transcript_segments=transcript_data.get("segments"),
+    )
 
     chapters = result.get("chapters") or []
     key_points = result.get("key_points") or []
@@ -350,7 +321,6 @@ def summarize_video(
         summary=result["summary"],
         category=result["category"],
         language=transcript_data["language"],
-        remaining_today=remaining,
         saved=saved,
         title=metadata.get("title"),
         channel=metadata.get("channel"),
@@ -372,6 +342,90 @@ def summarize_video(
         playlist_id=body.playlist_id,
         playlist_title=body.playlist_title,
     )
+
+
+@app.post("/summarize", response_model=SummarizeResponse)
+def summarize_video(
+    body: SummarizeRequest,
+    request: Request,
+    x_anthropic_key: str | None = Header(default=None),
+    user: User | None = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    remaining = None
+
+    # Bring-your-own-key callers and logged-in users skip the shared rate
+    # limit — it exists to cap cost exposure from anonymous visitors, not
+    # to throttle the account owner's own usage.
+    if x_anthropic_key:
+        client = Anthropic(api_key=x_anthropic_key)
+    elif user is not None:
+        client = None  # summarize() will build the server's own client
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+        allowed, remaining = check_and_record(client_ip, FREE_TIER_DAILY_LIMIT)
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Free tier limit of {FREE_TIER_DAILY_LIMIT} summaries/day reached. "
+                    "Try again tomorrow, or pass your own Claude API key via the "
+                    "x-anthropic-key header."
+                ),
+            )
+        client = None  # summarize() will build the server's own client
+
+    try:
+        response = _summarize_and_save(body, user, db, client)
+    except TranscriptError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except QuotaExceededError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except SummarizerError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    response.remaining_today = remaining
+    return response
+
+
+def _run_summarize_in_background(body: SummarizeRequest, user_id: int, client: Anthropic | None) -> None:
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            return
+        try:
+            _summarize_and_save(body, user, db, client)
+        except (TranscriptError, QuotaExceededError, SummarizerError):
+            # Best-effort — there's no request left to report the failure
+            # to. The user just won't see it land in their history.
+            pass
+    finally:
+        db.close()
+
+
+@app.post("/summarize/queue")
+def queue_summarize_video(
+    body: SummarizeRequest,
+    background_tasks: BackgroundTasks,
+    x_anthropic_key: str | None = Header(default=None),
+    user: User = Depends(require_user),
+):
+    """
+    Fire-and-forget variant for callers that can't wait out a slow request
+    (e.g. an iOS Shortcut run from the Share Sheet, which iOS kills after
+    roughly 30 seconds — well under how long a real summarize call takes).
+    Returns almost immediately; the result lands in the account's history
+    once the background job finishes, same as a normal /summarize call.
+    """
+    try:
+        video_id = extract_video_id(body.url)
+    except TranscriptError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    client = Anthropic(api_key=x_anthropic_key) if x_anthropic_key else None
+    background_tasks.add_task(_run_summarize_in_background, body, user.id, client)
+    return {"queued": True, "video_id": video_id}
 
 
 def _row_to_history_item(r: Summary) -> HistoryItem:
