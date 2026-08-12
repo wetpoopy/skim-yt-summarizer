@@ -1417,10 +1417,39 @@
      itself getting "highlighted"/"washed out". These already show a
      clear active state via color (amber arrow/label), so the outline
      isn't pulling extra weight here. */
+  .key-point-toggle,
+  .view-toggle-btn,
+  .gloss-term,
+  .key-point-toggle *,
+  .view-toggle-btn *,
   .key-point-toggle:focus-visible,
   .view-toggle-btn:focus-visible,
-  .gloss-term:focus-visible {
-    outline: none;
+  .gloss-term:focus-visible,
+  .key-point-toggle:focus,
+  .view-toggle-btn:focus,
+  .gloss-term:focus,
+  .key-point-toggle:active,
+  .view-toggle-btn:active,
+  .gloss-term:active {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* Belt and suspenders on top of the above: iOS can also show its
+     native "select this word" highlight + magnifier on a tap that lands
+     on text rather than being cleanly caught as a button press, which
+     looks identical to an unwanted highlight and neither tap-highlight-
+     color nor outline:none touches it. Killing selection/callout on
+     these tap targets removes every remaining source of a visible
+     highlight on tap — they're controls, not text meant to be selected,
+     and copying the full summary is already handled by the COPY button. */
+  .summary-view-container,
+  .summary-view-container *,
+  .history-card-summary,
+  .history-card-summary * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   button:disabled {
@@ -2843,12 +2872,21 @@
   });
 
   // ---------- history view ----------
+  // Remembers which top-level tab was open so a page refresh lands back
+  // on it instead of always resetting to one hardcoded view.
+  const LAST_VIEW_KEY = 'tldw_last_view';
+
+  function rememberView(name) {
+    try { sessionStorage.setItem(LAST_VIEW_KEY, name); } catch { /* private browsing, etc — non-fatal */ }
+  }
+
   function showMainView() {
     historyView.classList.add('hidden');
     glossaryView.classList.add('hidden');
     queueView.classList.add('hidden');
     mainView.classList.remove('hidden');
     stopQueuePolling();
+    rememberView('main');
   }
 
   async function showHistoryView() {
@@ -2857,6 +2895,7 @@
     queueView.classList.add('hidden');
     historyView.classList.remove('hidden');
     stopQueuePolling();
+    rememberView('history');
     await loadCategories();
     await loadHistory();
   }
@@ -2868,6 +2907,7 @@
     queueView.classList.add('hidden');
     glossaryView.classList.remove('hidden');
     stopQueuePolling();
+    rememberView('glossary');
     await loadGlossary();
   }
 
@@ -2933,6 +2973,7 @@
     historyView.classList.add('hidden');
     glossaryView.classList.add('hidden');
     queueView.classList.remove('hidden');
+    rememberView('queue');
     await loadQueue();
     stopQueuePolling();
     queuePollTimer = setInterval(loadQueue, 5000);
@@ -3713,10 +3754,19 @@
 
   (async () => {
     await refreshAuthState();
-    // Signed-in users land on their Library on load/refresh instead of
-    // the Summarize screen — that's the page they actually want most of
-    // the time once they have a history to check.
-    if (currentUser) showHistoryView();
+    // A refresh should leave the user wherever they were, not bounce
+    // them back to a fixed screen — restore whichever tab was last open
+    // this session. First-ever load of the session (nothing remembered
+    // yet) still defaults signed-in users to Library, since that's the
+    // page they want most of the time once they have a history to check.
+    if (currentUser) {
+      let lastView = null;
+      try { lastView = sessionStorage.getItem(LAST_VIEW_KEY); } catch { /* private browsing, etc */ }
+      if (lastView === 'main') showMainView();
+      else if (lastView === 'glossary') showGlossaryView();
+      else if (lastView === 'queue') showQueueView();
+      else showHistoryView();
+    }
   })();
 </script>
 
