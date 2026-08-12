@@ -59,7 +59,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 32px 20px 60px;
+    /* viewport-fit=cover + apple-mobile-web-app-capable means content can
+       render under the notch/status bar (especially added-to-homescreen)
+       unless the safe-area inset is added on top of the normal padding. */
+    padding: calc(32px + env(safe-area-inset-top)) 20px 60px;
     overflow-wrap: anywhere;
   }
 
@@ -134,25 +137,6 @@
   .auth-area button:hover, .link-btn:hover { background: var(--line); }
 
   .auth-area .user-email { color: var(--slate); }
-
-  .user-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: var(--amber-dim);
-    color: var(--amber);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: none;
-    cursor: pointer;
-  }
-
-  .user-avatar:hover { background: var(--amber); color: var(--ink); }
 
   .hidden { display: none !important; }
 
@@ -531,24 +515,6 @@
     letter-spacing: 0.04em;
   }
 
-  .labeled-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .labeled-row:empty { display: none; }
-  .labeled-row:has(.pill-wrap:empty) { display: none; }
-  .labeled-row:has(#sentimentPillContainer:empty) { display: none; }
-
-  .row-label {
-    font-size: 11px;
-    color: var(--slate);
-    letter-spacing: 0.03em;
-  }
-
   .pill-wrap {
     display: flex;
     flex-wrap: wrap;
@@ -556,6 +522,8 @@
   }
 
   .pill-wrap:empty { display: none; }
+
+  .card-pill-row { margin-bottom: 8px; }
 
   .history-card-channel {
     font-size: 11px;
@@ -799,6 +767,32 @@
   }
 
   .drawer-panel h2 { margin: 0 0 16px; font-size: 18px; }
+
+  .filter-section {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .filter-section-title {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .filter-section select, .filter-section input {
+    width: 100%;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+  }
+
+  #clearFiltersBtn { width: 100%; text-align: center; }
 
   .drawer-item {
     display: flex;
@@ -1540,12 +1534,8 @@
         <div class="result-title" id="resultTitle"></div>
         <div class="result-channel mono" id="resultChannel"></div>
         <div class="result-submeta mono" id="resultSubmeta"></div>
-        <div class="labeled-row" id="categoriesRow">
-          <span class="row-label mono">Categories:</span>
+        <div class="pill-wrap card-pill-row">
           <span class="pill-wrap" id="categoryPills"></span>
-        </div>
-        <div class="labeled-row" id="sentimentRow">
-          <span class="row-label mono">Sentiment:</span>
           <span id="sentimentPillContainer"></span>
         </div>
         <div class="title-answer" id="titleAnswer"></div>
@@ -1582,7 +1572,7 @@
   <div id="historyView" class="hidden">
     <div class="history-header">
       <button class="link-btn mono" id="backToMainBtn">← SUMMARIZE</button>
-      <h2>Your history</h2>
+      <h2>Your library</h2>
     </div>
 
     <div class="history-tabs">
@@ -1593,18 +1583,10 @@
 
     <div class="history-filters">
       <input type="search" id="searchFilter" class="mono" placeholder="Search title, summary, channel…">
-      <input type="date" id="dateFilter" class="mono">
-      <button class="link-btn mono" id="categoryPanelBtn">▤ CATEGORIES</button>
+      <button class="link-btn mono" id="categoryPanelBtn">▤ FILTERS</button>
       <select id="categoryFilter" class="mono hidden">
         <option value="">All categories</option>
       </select>
-      <select id="sortFilter" class="mono">
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="category">By category</option>
-        <option value="channel">By channel</option>
-      </select>
-      <button class="link-btn mono" id="clearFiltersBtn">CLEAR</button>
     </div>
 
     <div id="historyList"></div>
@@ -1638,8 +1620,29 @@
 
   <div class="drawer-overlay hidden" id="categoryPanel">
     <div class="drawer-panel">
-      <h2>Categories</h2>
-      <div id="categoryPanelList"></div>
+      <h2>Filters</h2>
+
+      <div class="filter-section">
+        <div class="filter-section-title mono">SORT BY</div>
+        <select id="sortFilter" class="mono">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="category">By category</option>
+          <option value="channel">By channel</option>
+        </select>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-section-title mono">DATE</div>
+        <input type="date" id="dateFilter" class="mono">
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-section-title mono">CATEGORY</div>
+        <div id="categoryPanelList"></div>
+      </div>
+
+      <button class="link-btn mono" id="clearFiltersBtn">CLEAR ALL FILTERS</button>
     </div>
   </div>
 
@@ -2074,38 +2077,30 @@
     return `<span class="sentiment-pill mono ${cls}">${escapeHtml(item.sentiment_label)}</span>`;
   }
 
-  function getInitials(user) {
-    if (user.full_name && user.full_name.trim()) {
-      const parts = user.full_name.trim().split(/\s+/);
-      const first = parts[0][0] || '';
-      const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
-      return (first + last).toUpperCase();
-    }
-    return (user.email[0] || '?').toUpperCase();
-  }
-
   function renderAuthArea() {
     authArea.innerHTML = '';
     if (currentUser) {
-      const avatar = document.createElement('button');
-      avatar.className = 'user-avatar mono';
-      avatar.textContent = getInitials(currentUser);
-      avatar.title = currentUser.full_name || currentUser.email;
-      avatar.addEventListener('click', openActionsModal);
+      const libraryBtn = document.createElement('button');
+      libraryBtn.textContent = 'LIBRARY';
+      libraryBtn.addEventListener('click', showHistoryView);
 
-      const historyBtn = document.createElement('button');
-      historyBtn.textContent = 'HISTORY';
-      historyBtn.addEventListener('click', showHistoryView);
+      const summarizeBtn = document.createElement('button');
+      summarizeBtn.textContent = 'SUMMARIZE';
+      summarizeBtn.addEventListener('click', showMainView);
 
       const glossaryBtn = document.createElement('button');
       glossaryBtn.textContent = 'GLOSSARY';
       glossaryBtn.addEventListener('click', showGlossaryView);
 
+      // Doubles as the profile entry point (name/email/password,
+      // preferences, tokens, export, danger zone) — the avatar button
+      // used to open the same modal, so it was pure duplication.
       const actionsBtn = document.createElement('button');
       actionsBtn.textContent = 'ACTIONS';
+      actionsBtn.title = currentUser.full_name || currentUser.email;
       actionsBtn.addEventListener('click', openActionsModal);
 
-      authArea.append(avatar, historyBtn, glossaryBtn, actionsBtn);
+      authArea.append(libraryBtn, summarizeBtn, glossaryBtn, actionsBtn);
     } else {
       const signInBtn = document.createElement('button');
       signInBtn.textContent = 'SIGN IN';
@@ -2648,6 +2643,7 @@
     dateFilter.value = '';
     categoryFilter.value = '';
     sortFilter.value = 'newest';
+    categoryPanel.classList.add('hidden');
     loadHistory();
   });
   dateFilter.addEventListener('change', loadHistory);
@@ -2854,11 +2850,7 @@
             </div>
             ${channelLine ? `<div class="history-card-channel mono">${channelLine}</div>` : ''}
             ${metaLine ? `<div class="history-card-submeta mono">${metaLine}</div>` : ''}
-            <div class="labeled-row">
-              <span class="row-label mono">Categories:</span>
-              <span class="pill-wrap">${categoryPillsHtml(item.category)}</span>
-            </div>
-            ${item.sentiment_label ? `<div class="labeled-row"><span class="row-label mono">Sentiment:</span>${sentimentPillHtml(item)}</div>` : ''}
+            <div class="pill-wrap card-pill-row">${categoryPillsHtml(item.category)}${sentimentPillHtml(item)}</div>
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
               ${item.playlist_title ? `<span class="playlist-badge mono">📼 ${escapeHtml(item.playlist_title)}</span>` : ''}
