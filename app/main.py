@@ -16,6 +16,7 @@ import csv
 import io
 import json
 import logging
+import os
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Literal
@@ -65,12 +66,36 @@ def _on_startup():
         _scheduler.start()
 
 
-# Wide open for MVP; tighten to your actual frontend domain before you
-# publicize this.
+# The web frontend is served by this same app, so normal browser use is
+# same-origin and never consults CORS at all. Native callers (the Expo
+# app, iOS Shortcuts) aren't browsers and don't enforce CORS either. So
+# this allowlist exists purely to stop a random third-party site from
+# making authenticated cross-origin calls on a logged-in visitor's
+# behalf — it was previously "*", which is fine for an unpublicized MVP
+# but not for a public repo with a public URL.
+#
+# Override with a comma-separated ALLOWED_ORIGINS env var to add a
+# staging domain or a different local port without touching code.
+_DEFAULT_ALLOWED_ORIGINS = [
+    "https://www.toolazydidntwatch.com",
+    "https://toolazydidntwatch.com",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("ALLOWED_ORIGINS", ",".join(_DEFAULT_ALLOWED_ORIGINS)).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["POST", "GET"],
+    allow_origins=ALLOWED_ORIGINS,
+    # The previous list was just POST/GET, which quietly understated what
+    # the API actually uses (PATCH on history items, PUT on preferences,
+    # DELETE on summaries/tokens/account). Same-origin requests never hit
+    # this, which is why the gap never surfaced.
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
