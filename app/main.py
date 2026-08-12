@@ -22,7 +22,7 @@ from typing import Literal
 from anthropic import Anthropic
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
@@ -883,7 +883,22 @@ _static_dir = Path(__file__).parent / "static"
 
 @app.get("/", include_in_schema=False)
 def serve_index():
-    return Response(content="ROUTE-MARKER-DEBUG-12345", media_type="text/plain")
+    """
+    Explicit route (checked before the StaticFiles mount below) so the
+    app shell always revalidates instead of being cached indefinitely.
+    StaticFiles sends no Cache-Control header at all, which browsers —
+    especially mobile Safari for a home-screen/standalone PWA, which
+    this app is set up as — can and do treat as "cache this and don't
+    bother checking again," silently serving an old index.html (old
+    CSS/JS, since everything is inline in this one file) after a fix
+    has already shipped.
+    """
+    html = (_static_dir / "index.html").read_text(encoding="utf-8")
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 # Mounted last and at "/" so it only catches requests that don't match
