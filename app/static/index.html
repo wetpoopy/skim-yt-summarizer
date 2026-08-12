@@ -116,6 +116,13 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 6px;
+    /* A flex item's default min-width:auto refuses to shrink below its
+       content's intrinsic width — without this, the nav row inside
+       (.auth-area) never actually got squeezed, so its own overflow-x
+       scroll never had anything to do and ACTIONS just got clipped at
+       the edge of the viewport instead. */
+    min-width: 0;
+    max-width: 100%;
   }
 
   .auth-area {
@@ -127,6 +134,7 @@
        instead of silently clipping — losing space here used to cut
        ACTIONS off the right edge entirely with no way to reach it. */
     max-width: 100%;
+    min-width: 0;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
