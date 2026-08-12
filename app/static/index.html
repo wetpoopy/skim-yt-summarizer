@@ -1410,13 +1410,16 @@
   button:active { transform: scale(0.98); }
   button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 
-  /* Mobile Safari/Chrome grant a tapped button :focus-visible the same
-     as a real keyboard tab — on the SHORT/LONG toggle and key-point
-     bullets that draws a bright 2px amber box around the whole (often
-     multi-line, full-width) row on every tap, reading as the text
-     itself getting "highlighted"/"washed out". These already show a
-     clear active state via color (amber arrow/label), so the outline
-     isn't pulling extra weight here. */
+  /* .key-point-toggle / .view-toggle-btn are plain <div role="button">s,
+     not real <button> elements — on iOS, real <button>s kept showing a
+     solid amber fill on tap (an active/pressed feedback baked into the
+     platform's native control rendering) that neither
+     -webkit-tap-highlight-color:transparent nor outline:none could
+     suppress, even with !important. A non-native element gets no native
+     press feedback at all, so this is the actual fix; these rules are
+     kept as extra insurance against any residual outline/tap-highlight-
+     color-driven highlighting (.gloss-term is a <span>, never a real
+     <button>, but gets the same treatment for consistency). */
   .key-point-toggle,
   .view-toggle-btn,
   .gloss-term,
@@ -1727,8 +1730,8 @@
         </div>
         <div class="summary-view-container">
           <div class="view-toggle hidden" id="viewToggle">
-            <button class="view-toggle-btn active mono" data-view="short">SHORT</button>
-            <button class="view-toggle-btn mono" data-view="long">LONG</button>
+            <div class="view-toggle-btn active mono" role="button" tabindex="0" data-view="short">SHORT</div>
+            <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="long">LONG</div>
           </div>
           <div class="summary-text summary-long-content hidden" id="summaryText"></div>
           <div class="key-points-list summary-short-content" id="keyPointsList"></div>
@@ -2162,10 +2165,10 @@
   function keyPointsHtml(keyPoints, glossary) {
     return keyPoints.map((kp, i) => `
       <div class="key-point-row" data-idx="${i}">
-        <button class="key-point-toggle" type="button">
+        <div class="key-point-toggle" role="button" tabindex="0">
           <span class="key-point-arrow">▸</span>
           <span class="key-point-text">${linkifyGlossary(kp.point, glossary)}</span>
-        </button>
+        </div>
         <div class="key-point-detail hidden">${linkifyGlossary(kp.detail, glossary)}</div>
       </div>
     `).join('');
@@ -2255,10 +2258,10 @@
       const preview = b.slice(0, LONG_BLOCK_PREVIEW_LEN - 1).trimEnd() + '…';
       return `
         <div class="key-point-row" data-idx="${i}">
-          <button class="key-point-toggle" type="button">
+          <div class="key-point-toggle" role="button" tabindex="0">
             <span class="key-point-arrow">▸</span>
             <span class="key-point-text">${escapeHtml(preview)}</span>
-          </button>
+          </div>
           <div class="key-point-detail hidden">${linkifyGlossary(b, glossary)}</div>
         </div>
       `;
@@ -2296,10 +2299,24 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    const term = e.target.closest && e.target.closest('.gloss-term');
-    if (!term) return;
-    e.preventDefault();
-    openGlossPopoverFor(term);
+    const target = e.target;
+    if (!target.closest) return;
+    const term = target.closest('.gloss-term');
+    if (term) {
+      e.preventDefault();
+      openGlossPopoverFor(term);
+      return;
+    }
+    // key-point-toggle and view-toggle-btn are plain divs (role="button"),
+    // not real <button> elements — see the tap-highlight comment near
+    // .key-point-toggle's CSS for why — so they don't get native
+    // Enter/Space activation for free; wire it up manually for keyboard
+    // users.
+    const activatable = target.closest('.key-point-toggle, .view-toggle-btn');
+    if (activatable) {
+      e.preventDefault();
+      activatable.click();
+    }
   });
 
   // Delegated so it works for both the freshly-rendered result card and
@@ -3282,8 +3299,8 @@
             <div class="summary-view-container">
               ${item.key_points && item.key_points.length > 0 ? `
                 <div class="view-toggle">
-                  <button class="view-toggle-btn active mono" data-view="short">SHORT</button>
-                  <button class="view-toggle-btn mono" data-view="long">LONG</button>
+                  <div class="view-toggle-btn active mono" role="button" tabindex="0" data-view="short">SHORT</div>
+                  <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="long">LONG</div>
                 </div>
                 <div class="summary-long-content hidden">${longSummaryHtml(item.summary, item.glossary)}</div>
                 <div class="key-points-list summary-short-content">${keyPointsHtml(item.key_points, item.glossary)}</div>
