@@ -883,20 +883,7 @@ _static_dir = Path(__file__).parent / "static"
 
 @app.get("/", include_in_schema=False)
 def serve_index():
-    """
-    Explicit route (checked before the StaticFiles mount below) so the
-    app shell always revalidates instead of being cached indefinitely.
-    StaticFiles sends no Cache-Control header at all, which browsers —
-    especially mobile Safari for a home-screen/standalone PWA, which
-    this app is set up as — can and do treat as "cache this and don't
-    bother checking again," silently serving an old index.html (old
-    CSS/JS, since everything is inline in this one file) after a fix
-    has already shipped.
-    """
-    return FileResponse(
-        _static_dir / "index.html",
-        headers={"Cache-Control": "no-cache, must-revalidate", "X-TLDW-Route": "explicit-index"},
-    )
+    return Response(content="ROUTE-MARKER-DEBUG-12345", media_type="text/plain")
 
 
 # Mounted last and at "/" so it only catches requests that don't match
