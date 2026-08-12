@@ -101,13 +101,6 @@
     box-shadow: 0 0 8px var(--amber);
   }
 
-  .tier-badge {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 11px;
-    color: var(--slate);
-    letter-spacing: 0.04em;
-  }
-
   .header-right {
     display: flex;
     flex-direction: column;
@@ -150,7 +143,7 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    margin-bottom: 24px;
+    margin-bottom: 12px;
   }
 
   .history-header h2 {
@@ -227,12 +220,12 @@
     text-decoration-color: var(--amber);
   }
 
-  .history-card-submeta a, .result-submeta a {
+  .detail-value a {
     color: var(--slate);
     text-decoration: none;
   }
 
-  .history-card-submeta a:hover, .result-submeta a:hover {
+  .detail-value a:hover {
     color: var(--amber);
     text-decoration: underline;
   }
@@ -404,12 +397,6 @@
     background: var(--line);
   }
 
-  .history-card-submeta {
-    font-size: 11px;
-    color: var(--slate);
-    margin: -4px 0 0;
-  }
-
   .history-date-heading {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 12px;
@@ -524,15 +511,6 @@
   .pill-wrap:empty { display: none; }
 
   .card-pill-row { margin-bottom: 8px; }
-
-  .history-card-channel {
-    font-size: 11px;
-    color: var(--slate);
-    letter-spacing: 0.02em;
-    margin-bottom: 4px;
-  }
-
-  .history-card-channel:empty { display: none; }
 
   .sentiment-pill {
     font-size: 10px;
@@ -1390,23 +1368,50 @@
 
   .result-title:empty { display: none; }
 
-  .result-channel {
-    font-size: 12px;
-    color: var(--slate);
-    letter-spacing: 0.02em;
-    margin-bottom: 4px;
-  }
-
-  .result-channel:empty { display: none; }
-
-  .result-submeta {
-    font-size: 11px;
-    color: var(--slate);
-    letter-spacing: 0.02em;
+  .video-details {
     margin-bottom: 12px;
   }
 
-  .result-submeta:empty { display: none; }
+  .video-details-toggle {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .video-details-toggle::-webkit-details-marker { display: none; }
+
+  .video-details[open] .video-details-toggle { color: var(--paper); }
+
+  .video-details-body {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12.5px;
+  }
+
+  .detail-label {
+    color: var(--slate);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+
+  .detail-value {
+    color: var(--paper);
+    text-align: right;
+  }
 
   .result-meta {
     display: flex;
@@ -1495,7 +1500,6 @@
   <header>
     <div class="logo"><span class="dot"></span>TLDW</div>
     <div class="header-right">
-      <div class="tier-badge mono" id="tierBadge">— summaries left today</div>
       <div class="auth-area mono" id="authArea"></div>
     </div>
   </header>
@@ -1532,8 +1536,7 @@
       <div class="result-card">
         <div class="already-summarized-banner" id="alreadySummarizedBanner"></div>
         <div class="result-title" id="resultTitle"></div>
-        <div class="result-channel mono" id="resultChannel"></div>
-        <div class="result-submeta mono" id="resultSubmeta"></div>
+        <div id="resultVideoDetails"></div>
         <div class="pill-wrap card-pill-row">
           <span class="pill-wrap" id="categoryPills"></span>
           <span id="sentimentPillContainer"></span>
@@ -1571,7 +1574,6 @@
 
   <div id="historyView" class="hidden">
     <div class="history-header">
-      <button class="link-btn mono" id="backToMainBtn">← SUMMARIZE</button>
       <h2>Your library</h2>
     </div>
 
@@ -1867,8 +1869,7 @@
   const summaryText = document.getElementById('summaryText');
   const videoId = document.getElementById('videoId');
   const resultTitle = document.getElementById('resultTitle');
-  const resultChannel = document.getElementById('resultChannel');
-  const resultSubmeta = document.getElementById('resultSubmeta');
+  const resultVideoDetails = document.getElementById('resultVideoDetails');
   const categoryPills = document.getElementById('categoryPills');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
@@ -1890,7 +1891,6 @@
   const chaptersContainer = document.getElementById('chaptersContainer');
   const errorBox = document.getElementById('errorBox');
   const copyBtn = document.getElementById('copyBtn');
-  const tierBadge = document.getElementById('tierBadge');
 
   // ---------- auth state ----------
   const authArea = document.getElementById('authArea');
@@ -1909,7 +1909,6 @@
 
   const mainView = document.getElementById('mainView');
   const historyView = document.getElementById('historyView');
-  const backToMainBtn = document.getElementById('backToMainBtn');
   const searchFilter = document.getElementById('searchFilter');
   const dateFilter = document.getElementById('dateFilter');
   const categoryFilter = document.getElementById('categoryFilter');
@@ -2017,33 +2016,41 @@
     return `<a href="${watchUrl(item)}" target="_blank" rel="noopener" onclick="return confirm('Open this video on YouTube?')">${escapeHtml(item.title)}</a>`;
   }
 
-  function buildChannelLine(item) {
-    if (!item.channel) return '';
-    const channelText = escapeHtml(item.channel);
-    const subs = formatCount(item.subscriber_count);
-    const channelLabel = subs != null ? `${channelText} (${subs} subscribers)` : channelText;
-    return item.channel_id
-      ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelLabel}</a>`
-      : channelLabel;
-  }
+  function videoDetailsHtml(item) {
+    const rows = [];
 
-  function buildMetaLine(item) {
-    const parts = [];
+    if (item.channel) {
+      const channelText = escapeHtml(item.channel);
+      const channelValue = item.channel_id
+        ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelText}</a>`
+        : channelText;
+      rows.push(['Channel', channelValue]);
+    }
+    const subs = formatCount(item.subscriber_count);
+    if (subs != null) rows.push(['Subscribers', subs]);
     if (item.published_at) {
       const d = new Date(item.published_at);
       if (!isNaN(d.getTime())) {
-        parts.push(d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }));
+        rows.push(['Upload date', d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })]);
       }
     }
     const duration = formatDuration(item.duration_seconds);
-    if (duration) parts.push(duration);
+    if (duration) rows.push(['Duration', duration]);
     const views = formatCount(item.view_count);
-    if (views != null) parts.push(`${views} views`);
+    if (views != null) rows.push(['Views', views]);
     const likes = formatCount(item.like_count);
-    if (likes != null) parts.push(`${likes} likes`);
+    if (likes != null) rows.push(['Likes', likes]);
     const comments = formatCount(item.comment_count);
-    if (comments != null) parts.push(`${comments} comments`);
-    return parts.join(' · ');
+    if (comments != null) rows.push(['Comments', comments]);
+
+    if (rows.length === 0) return '';
+
+    return `<details class="video-details">
+      <summary class="video-details-toggle mono">▸ VIDEO DETAILS</summary>
+      <div class="video-details-body">
+        ${rows.map(([label, value]) => `<div class="detail-row"><span class="detail-label mono">${label}</span><span class="detail-value">${value}</span></div>`).join('')}
+      </div>
+    </details>`;
   }
 
   function categoryPillsHtml(category) {
@@ -2637,7 +2644,6 @@
     });
   });
 
-  backToMainBtn.addEventListener('click', showMainView);
   clearFiltersBtn.addEventListener('click', () => {
     searchFilter.value = '';
     dateFilter.value = '';
@@ -2834,8 +2840,6 @@
         }
 
         const timeOfDay = created.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-        const channelLine = buildChannelLine(item);
-        const metaLine = buildMetaLine(item);
 
         const card = document.createElement('div');
         card.className = 'history-card';
@@ -2848,8 +2852,7 @@
                 <div class="card-menu hidden"></div>
               </div>
             </div>
-            ${channelLine ? `<div class="history-card-channel mono">${channelLine}</div>` : ''}
-            ${metaLine ? `<div class="history-card-submeta mono">${metaLine}</div>` : ''}
+            ${videoDetailsHtml(item)}
             <div class="pill-wrap card-pill-row">${categoryPillsHtml(item.category)}${sentimentPillHtml(item)}</div>
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
@@ -3252,8 +3255,7 @@
       alreadySummarizedBanner.textContent = data.already_summarized
         ? '✓ You already summarized this video — showing your saved summary.' : '';
       resultTitle.innerHTML = titleLinkHtml(data);
-      resultChannel.innerHTML = buildChannelLine(data);
-      resultSubmeta.innerHTML = buildMetaLine(data);
+      resultVideoDetails.innerHTML = videoDetailsHtml(data);
       categoryPills.innerHTML = categoryPillsHtml(data.category);
       titleAnswer.textContent = data.title_answer || '';
       summaryText.textContent = data.summary;
@@ -3281,10 +3283,6 @@
       saveInsightsStatus.textContent = '';
 
       result.classList.add('visible');
-
-      if (typeof data.remaining_today === 'number') {
-        tierBadge.textContent = `${data.remaining_today} summaries left today`;
-      }
     } catch (err) {
       showError(err.message || 'Couldn\u2019t reach the server. Try again in a moment.');
     } finally {
