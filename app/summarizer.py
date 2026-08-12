@@ -247,7 +247,7 @@ def _structure_instructions(length: str, fmt: str) -> str:
         takeaway = "" if length == "brief" else "- One bullet for anything notably actionable, surprising, or a key takeaway (skip if nothing stands out)\n"
         return (
             "Respond entirely in bullet points — no prose paragraphs.\n"
-            "- One bullet TL;DR\n"
+            "- One opening bullet giving the overall gist (no label like 'TL;DR' or 'Summary' in front of it)\n"
             f"- {lo}-{hi} bullets covering the main content\n"
             f"{takeaway}"
         )
@@ -260,16 +260,17 @@ def _structure_instructions(length: str, fmt: str) -> str:
             "then cover the main content, in clear sentences."
         )
 
-    # mixed (default) — TL;DR + bullets + takeaway
-    tl_dr = "a 2-3 sentence TL;DR" if length == "detailed" else "a one-sentence TL;DR"
+    # mixed (default) — opening overview + bullets + takeaway
+    overview = "a 2-3 sentence overview" if length == "detailed" else "a one-sentence overview"
     takeaway = (
         "" if length == "brief"
         else ", ending with one extra bullet for anything notably actionable, surprising, or a key takeaway"
     )
     return (
-        f"Open with {tl_dr} as a plain sentence — no numbering, no bullet, no bold label, no "
-        "leading list marker of any kind. Then a blank line, then bullet points (using '-') "
-        f"covering the main content ({lo}-{hi} bullets){takeaway}."
+        f"Open with {overview} as a plain sentence — no numbering, no bullet, no bold label, no "
+        "leading list marker, and do NOT prefix it with any header word like 'TL;DR', 'Summary', "
+        "or 'Overview' — just start directly with the sentence itself. Then a blank line, then "
+        f"bullet points (using '-') covering the main content ({lo}-{hi} bullets){takeaway}."
     )
 
 
@@ -449,6 +450,18 @@ def _parse_timestamp(ts: str) -> int | None:
     return h * 3600 + m * 60 + s
 
 
+_LEADING_LABEL_RE = re.compile(r"^\s*(?:\*\*)?\s*(?:TL;?DR|TLDR|SUMMARY|OVERVIEW)\s*:?\s*(?:\*\*)?\s*[:\-—]?\s*", re.IGNORECASE)
+
+
+def _strip_leading_label(summary: str) -> str:
+    """
+    Models sometimes ignore the "no header word" instruction and open with
+    a literal "TL;DR:" (or "Summary:"/"Overview:") label anyway — strip it
+    defensively so the frontend never has to display it.
+    """
+    return _LEADING_LABEL_RE.sub("", summary, count=1)
+
+
 def _parse_response(raw_text: str) -> dict:
     """
     Pull the optional CATEGORY:/ANSWER:/SENTIMENT:/TIMESTAMPS: header
@@ -548,6 +561,7 @@ def _parse_response(raw_text: str) -> dict:
             break  # unrecognized line -> start of summary body
 
     summary = "\n".join(lines[idx:]).strip()
+    summary = _strip_leading_label(summary)
     key_points = [
         {"point": _strip_markdown(kp["point"]), "detail": _strip_markdown(kp["detail"])}
         for kp in key_points
