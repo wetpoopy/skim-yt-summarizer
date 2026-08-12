@@ -2898,8 +2898,14 @@
         <div class="queue-time mono">${when}</div>
       </div>`;
     }
+    // Processing items can sit for a while on a slow video, but the user
+    // should always be able to give up on one (e.g. queued the wrong
+    // link, or it's been stuck) instead of having no way to clear it.
     return `<div class="queue-card">
-      <div class="queue-card-top">${titleLink}</div>
+      <div class="queue-card-top">
+        ${titleLink}
+        <button class="queue-dismiss-btn mono" data-id="${item.id}" title="Cancel">✕</button>
+      </div>
       <div class="queue-status-line mono">⏳ Processing…</div>
       <div class="queue-time mono">${when}</div>
     </div>`;

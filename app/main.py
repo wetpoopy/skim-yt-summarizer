@@ -15,6 +15,7 @@ the rate limit and uses the caller's own key.
 import csv
 import io
 import json
+import logging
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Literal
@@ -43,6 +44,7 @@ from app.youtube_comments import get_top_comments
 from app.playlist import estimate_batch_cost, extract_playlist_id, get_playlist_preview
 
 app = FastAPI(title="YT Summarizer", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 _scheduler = BackgroundScheduler()
 
@@ -403,6 +405,22 @@ def _run_summarize_in_background(
             pending.status = "failed"
             pending.error = str(e)
             db.commit()
+            return
+        except Exception:
+            # Anything NOT one of the three expected summarizer errors
+            # (a network blip, an unexpected API response shape, a DB
+            # hiccup) used to fall straight through uncaught — Starlette
+            # just logs it and the task ends, leaving this row stuck at
+            # status="processing" forever with no way to ever clear it.
+            # Catch broadly so the row always resolves to something the
+            # user can see and dismiss.
+            logger.exception("Unexpected error in background summarize job (pending_id=%s)", pending_id)
+            db.rollback()
+            pending = db.get(PendingSummary, pending_id)
+            if pending is not None:
+                pending.status = "failed"
+                pending.error = "Something went wrong while summarizing this video. Try again."
+                db.commit()
             return
         # Succeeded — the real Summary row exists now, so the placeholder
         # can go away.
