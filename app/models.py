@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -59,7 +59,7 @@ class Summary(Base):
     channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
     channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     published_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    view_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

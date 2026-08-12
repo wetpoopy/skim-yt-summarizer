@@ -8,7 +8,7 @@ dev when DATABASE_URL isn't set.
 
 import os
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import BigInteger, create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./dev.db")
@@ -33,17 +33,27 @@ def _ensure_columns() -> None:
     """
     Additive-only, no-framework migration: create_all() only creates
     missing tables, not missing columns on tables that already exist
-    (e.g. the live Postgres 'summaries' table gaining new fields).
+    (e.g. the live Postgres 'summaries' table gaining new fields). Also
+    widens INTEGER columns to BIGINT when the model has moved to
+    BigInteger (e.g. view_count overflowing a 32-bit int on viral videos)
+    — widening never loses data, so it's safe to run automatically too.
     """
     inspector = inspect(engine)
     with engine.begin() as conn:
         for table in Base.metadata.tables.values():
-            existing_columns = {col["name"] for col in inspector.get_columns(table.name)}
+            existing_columns = {col["name"]: col for col in inspector.get_columns(table.name)}
             for column in table.columns:
-                if column.name in existing_columns:
+                if column.name not in existing_columns:
+                    col_type = column.type.compile(dialect=engine.dialect)
+                    conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}"))
                     continue
-                col_type = column.type.compile(dialect=engine.dialect)
-                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type}"))
+                existing_type = str(existing_columns[column.name]["type"]).upper()
+                if (
+                    engine.dialect.name == "postgresql"
+                    and isinstance(column.type, BigInteger)
+                    and existing_type == "INTEGER"
+                ):
+                    conn.execute(text(f"ALTER TABLE {table.name} ALTER COLUMN {column.name} TYPE BIGINT"))
 
 
 def init_db() -> None:
