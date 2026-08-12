@@ -608,7 +608,30 @@ def summarize(
     parsed = _parse_response(raw)
     if not parsed["summary"]:
         raise SummarizerError("The model returned an empty response.")
+    if not parsed["key_points"]:
+        # The model doesn't always emit a well-formed KEY_POINTS section
+        # (wrong delimiter, skipped it, truncation) — without this, that
+        # video would silently lose the SHORT view entirely and only ever
+        # show LONG, with no toggle. Guarantee SHORT always has something.
+        parsed["key_points"] = _synthesize_key_points(parsed["summary"])
     return parsed
+
+
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _synthesize_key_points(summary: str) -> list[dict]:
+    lines = [line.strip().lstrip("-*•").strip() for line in summary.split("\n")]
+    bullets = [line for line in lines if line]
+    if len(bullets) < 2:
+        # Prose-format summary, no bullet lines to split on — fall back
+        # to sentences instead.
+        bullets = [s.strip() for s in _SENTENCE_SPLIT_RE.split(summary) if s.strip()]
+    bullets = bullets[:8]
+    return [
+        {"point": b if len(b) <= 140 else b[:137] + "...", "detail": b}
+        for b in bullets
+    ]
 
 
 def define_terms(terms: list[str], client: Anthropic | None = None, provider: str = "anthropic") -> list[dict]:

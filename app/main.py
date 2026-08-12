@@ -34,7 +34,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.auth import get_current_user, require_user, router as auth_router
 from app.db import SessionLocal, get_db, init_db
 from app.digest import send_daily_digests
-from app.models import CustomGlossaryTerm, Summary, User
+from app.models import CustomGlossaryTerm, PendingSummary, Summary, User
 from app.transcript import extract_video_id, get_transcript, TranscriptError
 from app.summarizer import define_terms, normalize_category, summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
@@ -388,28 +388,46 @@ def summarize_video(
     return response
 
 
-def _run_summarize_in_background(body: SummarizeRequest, user_id: int, client: Anthropic | None) -> None:
+def _run_summarize_in_background(
+    body: SummarizeRequest, user_id: int, pending_id: int, client: Anthropic | None
+) -> None:
     db = SessionLocal()
     try:
         user = db.get(User, user_id)
-        if user is None:
+        pending = db.get(PendingSummary, pending_id)
+        if user is None or pending is None:
             return
         try:
             _summarize_and_save(body, user, db, client)
-        except (TranscriptError, QuotaExceededError, SummarizerError):
-            # Best-effort — there's no request left to report the failure
-            # to. The user just won't see it land in their history.
-            pass
+        except (TranscriptError, QuotaExceededError, SummarizerError) as e:
+            pending.status = "failed"
+            pending.error = str(e)
+            db.commit()
+            return
+        # Succeeded — the real Summary row exists now, so the placeholder
+        # can go away.
+        db.delete(pending)
+        db.commit()
     finally:
         db.close()
 
 
-@app.post("/summarize/queue")
+class PendingSummaryOut(BaseModel):
+    id: int
+    video_id: str
+    url: str
+    status: str
+    error: str | None = None
+    created_at: datetime
+
+
+@app.post("/summarize/queue", response_model=PendingSummaryOut)
 def queue_summarize_video(
     body: SummarizeRequest,
     background_tasks: BackgroundTasks,
     x_anthropic_key: str | None = Header(default=None),
     user: User = Depends(require_user),
+    db: Session = Depends(get_db),
 ):
     """
     Fire-and-forget variant for callers that can't wait out a slow request
@@ -423,9 +441,32 @@ def queue_summarize_video(
     except TranscriptError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    pending = PendingSummary(user_id=user.id, video_id=video_id, url=body.url, status="processing")
+    db.add(pending)
+    db.commit()
+    db.refresh(pending)
+
     client = Anthropic(api_key=x_anthropic_key) if x_anthropic_key else None
-    background_tasks.add_task(_run_summarize_in_background, body, user.id, client)
-    return {"queued": True, "video_id": video_id}
+    background_tasks.add_task(_run_summarize_in_background, body, user.id, pending.id, client)
+    return pending
+
+
+@app.get("/summarize/pending", response_model=list[PendingSummaryOut])
+def list_pending_summaries(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    rows = db.scalars(
+        select(PendingSummary).where(PendingSummary.user_id == user.id).order_by(PendingSummary.created_at.desc())
+    ).all()
+    return rows
+
+
+@app.delete("/summarize/pending/{pending_id}")
+def dismiss_pending_summary(pending_id: int, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    row = db.scalar(select(PendingSummary).where(PendingSummary.id == pending_id, PendingSummary.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Not found.")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
 
 
 def _row_to_history_item(r: Summary) -> HistoryItem:

@@ -203,6 +203,51 @@
     margin-bottom: 20px;
   }
 
+  .queue-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 12px;
+  }
+
+  .queue-card.queue-failed { border-color: rgba(229, 72, 77, 0.35); }
+
+  .queue-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-weight: 600;
+  }
+
+  .queue-status-line {
+    font-size: 12px;
+    color: var(--slate);
+    margin-top: 6px;
+  }
+
+  .queue-failed .queue-status-line { color: var(--danger); }
+
+  .queue-time {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 4px;
+  }
+
+  .queue-dismiss-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .queue-dismiss-btn:hover { background: var(--line); color: var(--paper); }
+
   .history-card-title {
     font-size: 18px;
     font-weight: 700;
@@ -1620,6 +1665,14 @@
     <div class="history-empty mono" id="glossaryEmpty">No terms yet — they'll show up here as your summaries define them.</div>
   </div>
 
+  <div id="queueView" class="hidden">
+    <div class="history-header">
+      <h2>Queue</h2>
+    </div>
+    <div id="queueList"></div>
+    <div class="history-empty mono" id="queueEmpty">Nothing processing right now.</div>
+  </div>
+
   <div class="drawer-overlay hidden" id="categoryPanel">
     <div class="drawer-panel">
       <h2>Filters</h2>
@@ -2099,6 +2152,10 @@
       glossaryBtn.textContent = 'GLOSSARY';
       glossaryBtn.addEventListener('click', showGlossaryView);
 
+      const queueBtn = document.createElement('button');
+      queueBtn.textContent = 'QUEUE';
+      queueBtn.addEventListener('click', showQueueView);
+
       // Doubles as the profile entry point (name/email/password,
       // preferences, tokens, export, danger zone) — the avatar button
       // used to open the same modal, so it was pure duplication.
@@ -2107,7 +2164,7 @@
       actionsBtn.title = currentUser.full_name || currentUser.email;
       actionsBtn.addEventListener('click', openActionsModal);
 
-      authArea.append(libraryBtn, summarizeBtn, glossaryBtn, actionsBtn);
+      authArea.append(libraryBtn, summarizeBtn, glossaryBtn, queueBtn, actionsBtn);
     } else {
       const signInBtn = document.createElement('button');
       signInBtn.textContent = 'SIGN IN';
@@ -2543,13 +2600,17 @@
   function showMainView() {
     historyView.classList.add('hidden');
     glossaryView.classList.add('hidden');
+    queueView.classList.add('hidden');
     mainView.classList.remove('hidden');
+    stopQueuePolling();
   }
 
   async function showHistoryView() {
     mainView.classList.add('hidden');
     glossaryView.classList.add('hidden');
+    queueView.classList.add('hidden');
     historyView.classList.remove('hidden');
+    stopQueuePolling();
     await loadCategories();
     await loadHistory();
   }
@@ -2558,8 +2619,71 @@
   async function showGlossaryView() {
     mainView.classList.add('hidden');
     historyView.classList.add('hidden');
+    queueView.classList.add('hidden');
     glossaryView.classList.remove('hidden');
+    stopQueuePolling();
     await loadGlossary();
+  }
+
+  // ---------- queue view ----------
+  const queueView = document.getElementById('queueView');
+  const queueList = document.getElementById('queueList');
+  const queueEmpty = document.getElementById('queueEmpty');
+  let queuePollTimer = null;
+
+  function stopQueuePolling() {
+    if (queuePollTimer) {
+      clearInterval(queuePollTimer);
+      queuePollTimer = null;
+    }
+  }
+
+  function queueItemHtml(item) {
+    const watchLink = `https://www.youtube.com/watch?v=${encodeURIComponent(item.video_id)}`;
+    const when = new Date(item.created_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const titleLink = `<a href="${watchLink}" target="_blank" rel="noopener" onclick="return confirm('Open this video on YouTube?')">${escapeHtml(item.video_id)}</a>`;
+    if (item.status === 'failed') {
+      return `<div class="queue-card queue-failed">
+        <div class="queue-card-top">
+          ${titleLink}
+          <button class="queue-dismiss-btn mono" data-id="${item.id}" title="Dismiss">✕</button>
+        </div>
+        <div class="queue-status-line mono">✗ Failed — ${escapeHtml(item.error || 'something went wrong')}</div>
+        <div class="queue-time mono">${when}</div>
+      </div>`;
+    }
+    return `<div class="queue-card">
+      <div class="queue-card-top">${titleLink}</div>
+      <div class="queue-status-line mono">⏳ Processing…</div>
+      <div class="queue-time mono">${when}</div>
+    </div>`;
+  }
+
+  async function loadQueue() {
+    try {
+      const res = await fetch('/summarize/pending');
+      if (!res.ok) return;
+      const items = await res.json();
+      queueList.innerHTML = items.map(queueItemHtml).join('');
+      queueEmpty.classList.toggle('visible', items.length === 0);
+    } catch { /* leave as-is */ }
+  }
+
+  queueList.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.queue-dismiss-btn');
+    if (!btn) return;
+    await fetch(`/summarize/pending/${btn.dataset.id}`, { method: 'DELETE' });
+    loadQueue();
+  });
+
+  async function showQueueView() {
+    mainView.classList.add('hidden');
+    historyView.classList.add('hidden');
+    glossaryView.classList.add('hidden');
+    queueView.classList.remove('hidden');
+    await loadQueue();
+    stopQueuePolling();
+    queuePollTimer = setInterval(loadQueue, 5000);
   }
 
   function glossaryCardHtml(term) {
@@ -3335,7 +3459,13 @@
     setTimeout(() => (copyBtn.textContent = 'COPY'), 1500);
   });
 
-  refreshAuthState();
+  (async () => {
+    await refreshAuthState();
+    // Signed-in users land on their Library on load/refresh instead of
+    // the Summarize screen — that's the page they actually want most of
+    // the time once they have a history to check.
+    if (currentUser) showHistoryView();
+  })();
 </script>
 
 </body>

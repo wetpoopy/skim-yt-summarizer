@@ -79,6 +79,25 @@ class Summary(Base):
     user: Mapped["User"] = relationship(back_populates="summaries")
 
 
+class PendingSummary(Base):
+    """
+    A row per in-flight /summarize/queue job — created when the job is
+    scheduled, removed when it finishes successfully (the real Summary
+    row exists by then), updated to status='failed' if it errors out.
+    Lets the UI show what's currently processing instead of a job just
+    silently vanishing into a background task.
+    """
+    __tablename__ = "pending_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    video_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="processing", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
 class CustomGlossaryTerm(Base):
     __tablename__ = "custom_glossary_terms"
 
