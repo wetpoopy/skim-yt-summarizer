@@ -281,33 +281,70 @@
 
   .history-card-toggle:hover { background: #FFC04D; }
 
-  .history-card-actions {
+  .history-card-title-row {
     display: flex;
-    gap: 8px;
-    margin-top: 10px;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
   }
 
-  .history-card-action-btn {
+  .history-card-title-row .history-card-title { flex: 1; min-width: 0; }
+
+  .card-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .card-menu-btn {
     background: transparent;
     border: 1px solid var(--line);
     color: var(--slate);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .card-menu-btn:hover { background: var(--line); color: var(--paper); }
+
+  .card-menu {
+    position: absolute;
+    top: 34px;
+    right: 0;
+    min-width: 150px;
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px;
+    z-index: 5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .card-menu.hidden { display: none; }
+
+  .card-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--paper);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 0.03em;
-    padding: 5px 10px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    padding: 9px 10px;
     border-radius: 6px;
     cursor: pointer;
     white-space: nowrap;
   }
 
-  .history-card-action-btn:hover { background: var(--line); color: var(--paper); }
+  .card-menu-item:hover { background: var(--line); }
 
-  .history-card-action-btn.danger {
-    border-color: rgba(229, 72, 77, 0.4);
-    color: var(--danger);
-  }
+  .card-menu-item.danger { color: var(--danger); }
 
-  .history-card-action-btn.danger:hover { background: rgba(229, 72, 77, 0.1); }
+  .card-menu-item.danger:hover { background: rgba(229, 72, 77, 0.1); }
 
   .title-answer {
     background: rgba(255, 176, 32, 0.06);
@@ -404,7 +441,6 @@
     font-size: 14px;
     line-height: 1.6;
     color: var(--paper);
-    white-space: pre-wrap;
     display: none;
     margin-top: 14px;
     padding-top: 14px;
@@ -412,6 +448,14 @@
   }
 
   .history-card.expanded .history-card-summary { display: block; }
+
+  /* Scoped here (not on the whole .history-card-summary) — pre-wrap
+     needs to preserve line breaks in the raw long-form text, but applying
+     it at the container level meant every whitespace/indentation text
+     node from the JS template literals (between <div>, <button>, etc.)
+     rendered as visible blank space throughout the expanded card,
+     including inside the SHORT/LONG toggle and key-point rows. */
+  .summary-long-content { white-space: pre-wrap; }
 
   .history-empty {
     color: var(--slate);
@@ -667,6 +711,7 @@
     appearance: none;
     margin: 0;
     text-align: left;
+    white-space: normal;
     cursor: pointer;
     padding: 0;
     color: var(--paper);
@@ -680,6 +725,16 @@
 
   .key-point-toggle span {
     font-size: inherit;
+  }
+
+  /* The point-text span, not the arrow — a flex item's default
+     min-width:auto refuses to shrink below its content's intrinsic
+     (unwrapped) width, so without this the bullet text stayed on one
+     line and overflowed the card horizontally instead of wrapping. */
+  .key-point-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
   }
 
   .key-point-arrow {
@@ -1911,7 +1966,7 @@
       <div class="key-point-row" data-idx="${i}">
         <button class="key-point-toggle" type="button">
           <span class="key-point-arrow">▸</span>
-          <span>${escapeHtml(kp.point)}</span>
+          <span class="key-point-text">${escapeHtml(kp.point)}</span>
         </button>
         <div class="key-point-detail hidden">${escapeHtml(kp.detail)}</div>
       </div>
@@ -2675,24 +2730,37 @@
     loadHistory();
   }
 
-  function buildCardActions(item) {
-    const wrap = document.createElement('div');
-    wrap.className = 'history-card-actions';
+  function closeAllCardMenus() {
+    document.querySelectorAll('.card-menu').forEach(m => m.classList.add('hidden'));
+  }
+  document.addEventListener('click', closeAllCardMenus);
+
+  function wireCardMenu(card, item) {
+    const menuBtn = card.querySelector('.card-menu-btn');
+    const menu = card.querySelector('.card-menu');
+
+    function addMenuItem(label, onClick, danger) {
+      const btn = document.createElement('button');
+      btn.className = 'card-menu-item' + (danger ? ' danger' : '');
+      btn.textContent = label;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAllCardMenus();
+        onClick();
+      });
+      menu.appendChild(btn);
+      return btn;
+    }
 
     if (currentStatusTab === 'archived') {
-      const restoreBtn = document.createElement('button');
-      restoreBtn.className = 'history-card-action-btn';
-      restoreBtn.textContent = 'RESTORE';
-      restoreBtn.addEventListener('click', () => setHistoryStatus(item.id, 'unread'));
+      addMenuItem('RESTORE', () => setHistoryStatus(item.id, 'unread'));
 
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'history-card-action-btn danger';
-      deleteBtn.textContent = 'DELETE FOREVER';
       let confirming = false;
-      deleteBtn.addEventListener('click', async () => {
+      const deleteBtn = addMenuItem('DELETE FOREVER', async () => {
         if (!confirming) {
           confirming = true;
           deleteBtn.textContent = 'CONFIRM?';
+          menu.classList.remove('hidden');
           setTimeout(() => {
             if (confirming) { confirming = false; deleteBtn.textContent = 'DELETE FOREVER'; }
           }, 3000);
@@ -2700,29 +2768,18 @@
         }
         await fetch(`/history/${item.id}`, { method: 'DELETE' });
         loadHistory();
-      });
-
-      wrap.append(restoreBtn, deleteBtn);
+      }, true);
     } else {
-      const toggleReadBtn = document.createElement('button');
-      toggleReadBtn.className = 'history-card-action-btn';
       const isRead = currentStatusTab === 'read';
-      toggleReadBtn.textContent = isRead ? 'MARK UNREAD' : 'MARK READ';
-      toggleReadBtn.addEventListener('click', () => setHistoryStatus(item.id, isRead ? 'unread' : 'read'));
+      addMenuItem(isRead ? 'MARK UNREAD' : 'MARK READ', () => setHistoryStatus(item.id, isRead ? 'unread' : 'read'));
+      addMenuItem('ARCHIVE', () => setHistoryStatus(item.id, 'archived'));
 
-      const archiveBtn = document.createElement('button');
-      archiveBtn.className = 'history-card-action-btn';
-      archiveBtn.textContent = 'ARCHIVE';
-      archiveBtn.addEventListener('click', () => setHistoryStatus(item.id, 'archived'));
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'history-card-action-btn danger';
-      deleteBtn.textContent = 'DELETE';
       let confirming = false;
-      deleteBtn.addEventListener('click', async () => {
+      const deleteBtn = addMenuItem('DELETE', async () => {
         if (!confirming) {
           confirming = true;
           deleteBtn.textContent = 'CONFIRM?';
+          menu.classList.remove('hidden');
           setTimeout(() => {
             if (confirming) { confirming = false; deleteBtn.textContent = 'DELETE'; }
           }, 3000);
@@ -2730,12 +2787,15 @@
         }
         await fetch(`/history/${item.id}`, { method: 'DELETE' });
         loadHistory();
-      });
-
-      wrap.append(toggleReadBtn, archiveBtn, deleteBtn);
+      }, true);
     }
 
-    return wrap;
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasHidden = menu.classList.contains('hidden');
+      closeAllCardMenus();
+      if (wasHidden) menu.classList.remove('hidden');
+    });
   }
 
   async function loadHistory() {
@@ -2785,7 +2845,13 @@
         card.className = 'history-card';
         card.innerHTML = `
           <div class="history-card-header">
-            ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : ''}
+            <div class="history-card-title-row">
+              ${item.title ? `<div class="history-card-title">${titleLinkHtml(item)}</div>` : '<div></div>'}
+              <div class="card-menu-wrap">
+                <button class="card-menu-btn" type="button" aria-label="More actions">⋮</button>
+                <div class="card-menu hidden"></div>
+              </div>
+            </div>
             ${channelLine ? `<div class="history-card-channel mono">${channelLine}</div>` : ''}
             ${metaLine ? `<div class="history-card-submeta mono">${metaLine}</div>` : ''}
             <div class="labeled-row">
@@ -2821,7 +2887,7 @@
           toggleBtn.textContent = expanded ? 'COLLAPSE ▴' : 'EXPAND ▾';
         });
 
-        card.querySelector('.history-card-header').appendChild(buildCardActions(item));
+        wireCardMenu(card, item);
 
         historyList.appendChild(card);
       }
