@@ -2673,6 +2673,53 @@
     toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
   }
 
+  // ---------- returning-from-another-app state ----------
+  // Leaving for Obsidian (or any app switch) can cause the browser to
+  // re-run the page, which would otherwise drop you back at the top of a
+  // fully-collapsed library. Remember scroll position and which cards
+  // were open, and put it all back.
+  const SCROLL_STATE_KEY = 'tldw_scroll_state';
+
+  function saveScrollState() {
+    try {
+      const expanded = [...document.querySelectorAll('.history-card.expanded')]
+        .map(c => c.dataset.summaryId)
+        .filter(Boolean);
+      sessionStorage.setItem(SCROLL_STATE_KEY, JSON.stringify({
+        y: window.scrollY,
+        expanded,
+        at: Date.now(),
+      }));
+    } catch { /* private browsing — just lose the position */ }
+  }
+
+  function restoreScrollState() {
+    let state = null;
+    try {
+      const raw = sessionStorage.getItem(SCROLL_STATE_KEY);
+      if (raw) state = JSON.parse(raw);
+    } catch { return; }
+    if (!state) return;
+    // Only meaningful for a quick round-trip; an hour later the user has
+    // moved on and being teleported mid-list would be confusing.
+    if (Date.now() - (state.at || 0) > 10 * 60 * 1000) return;
+
+    for (const id of state.expanded || []) {
+      const card = document.querySelector(`.history-card[data-summary-id="${id}"]`);
+      if (!card) continue;
+      card.classList.add('expanded');
+      const btn = card.querySelector('.history-card-toggle');
+      if (btn) btn.textContent = 'COLLAPSE ▴';
+    }
+    if (typeof state.y === 'number') window.scrollTo(0, state.y);
+  }
+
+  // Any backgrounding counts, not just the Obsidian hand-off — iOS is
+  // free to discard and re-run the page whenever it's not in front.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveScrollState();
+  });
+
   // ---------- Obsidian export ----------
   // Vault name lives in localStorage rather than the account: it's a
   // property of this device's Obsidian install, and asking the server to
@@ -2879,7 +2926,17 @@
     const folder = getObsidianFolder().replace(/^\/+|\/+$/g, '');
     const name = safeNoteName(item.title, item.video_id);
     const filePath = folder ? `${folder}/${name}` : name;
-    const base = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}`;
+    // silent=true tells Obsidian to file the note without opening it in
+    // the editor. Switching apps at all is the OS handling the
+    // obsidian:// scheme and can't be avoided from a web page, but this
+    // at least means you land back where you were instead of staring at
+    // a freshly-opened note you didn't ask to read.
+    const base = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}&silent=true`;
+
+    // Snapshot where the user is so returning from Obsidian doesn't dump
+    // them at the top of a collapsed list — the app switch can cause the
+    // browser to re-run the page from scratch.
+    saveScrollState();
     const inlineUri = `${base}&content=${encodeURIComponent(md)}`;
 
     // Short enough to hand over directly, which leaves the clipboard alone.
@@ -3817,6 +3874,7 @@
 
         const card = document.createElement('div');
         card.className = 'history-card';
+        card.dataset.summaryId = item.id;   // lets restoreScrollState() re-open it
         card.innerHTML = `
           <div class="history-card-header">
             <div class="history-card-title-row">
@@ -3860,6 +3918,9 @@
 
         historyList.appendChild(card);
       }
+      // Cards exist now, so anything remembered from before an app switch
+      // can be put back.
+      restoreScrollState();
     } catch { /* leave list empty */ }
   }
 
