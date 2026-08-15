@@ -2832,6 +2832,12 @@
     pendingObsidianItem = null;
   }
 
+  // Keep well under what a custom-scheme URL can carry. A real summary is
+  // ~8.5KB of markdown and URL-encoding inflates that by ~1.4x, so the
+  // inline-content path only ever handles genuinely short notes; anything
+  // bigger goes via the clipboard route below, which has no size ceiling.
+  const OBSIDIAN_INLINE_LIMIT = 3000;
+
   function sendToObsidian(item) {
     const vault = getObsidianVault();
     if (!vault) {
@@ -2842,18 +2848,26 @@
     const folder = getObsidianFolder().replace(/^\/+|\/+$/g, '');
     const name = safeNoteName(item.title, item.video_id);
     const filePath = folder ? `${folder}/${name}` : name;
-    const uri = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}&content=${encodeURIComponent(md)}`;
+    const base = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}`;
+    const inlineUri = `${base}&content=${encodeURIComponent(md)}`;
 
-    // Custom-scheme URLs get truncated past a few KB on iOS, which would
-    // silently create a half-written note. Copy instead when it's long —
-    // better a manual paste than a corrupted note.
-    if (uri.length > 6000) {
-      copyMarkdown(item).then(() => {
-        showToast('Too long for a direct hand-off — copied instead, paste into Obsidian');
-      });
+    // Short enough to hand over directly, which leaves the clipboard alone.
+    if (inlineUri.length <= OBSIDIAN_INLINE_LIMIT) {
+      window.location.href = inlineUri;
       return;
     }
-    window.location.href = uri;
+
+    // Otherwise use Obsidian's own clipboard parameter: it reads the note
+    // body from the clipboard rather than the URL, so note length stops
+    // mattering entirely. writeText is called before any await so it still
+    // counts as happening inside the tap — Safari rejects clipboard writes
+    // that lose their user-gesture context.
+    navigator.clipboard.writeText(md).then(() => {
+      window.location.href = `${base}&clipboard=true`;
+      showToast('Opening Obsidian…');
+    }).catch(() => {
+      showToast('Couldn’t reach the clipboard — try COPY MARKDOWN and paste it in', true);
+    });
   }
 
   function sentimentPillHtml(item) {
