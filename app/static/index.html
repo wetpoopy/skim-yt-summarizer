@@ -2025,8 +2025,8 @@
         Notes are created with a link back to the video, tags from the
         categories, and the full summary.
       </div>
-      <input type="text" class="confirm-input mono" id="obsidianVault" placeholder="Vault name (required)">
-      <input type="text" class="confirm-input mono" id="obsidianFolder" placeholder="Folder, e.g. TLDW (optional)">
+      <input type="text" class="confirm-input mono" id="obsidianVault" placeholder="Vault name, e.g. YouTube (required)">
+      <input type="text" class="confirm-input mono" id="obsidianFolder" placeholder="Folder, e.g. Summaries (blank = vault root)">
       <div class="action-row-status mono" id="obsidianStatus"></div>
       <button class="link-btn mono" id="obsidianSaveBtn" style="width:100%;margin-top:12px;">SAVE &amp; SEND</button>
     </div>
@@ -2101,6 +2101,14 @@
           <div class="action-row-desc mono">For Shortcuts, scripts, etc.</div>
         </div>
         <button class="link-btn mono" id="openTokensBtn">MANAGE</button>
+      </div>
+
+      <div class="action-row">
+        <div>
+          <div class="action-row-title">Obsidian</div>
+          <div class="action-row-desc mono" id="obsidianCurrent">Where SEND TO OBSIDIAN files your notes.</div>
+        </div>
+        <button class="link-btn mono" id="openObsidianBtn">CONFIGURE</button>
       </div>
 
       <div class="action-row action-row-stack">
@@ -2676,8 +2684,16 @@
     try { return localStorage.getItem(OBSIDIAN_VAULT_KEY) || ''; } catch { return ''; }
   }
 
+  // A sensible default so notes land somewhere tidy instead of the vault
+  // root. Only applies until the user saves their own choice — saving an
+  // empty folder is respected and files notes at the root.
+  const OBSIDIAN_DEFAULT_FOLDER = 'Summaries';
+
   function getObsidianFolder() {
-    try { return localStorage.getItem(OBSIDIAN_FOLDER_KEY) || ''; } catch { return ''; }
+    try {
+      const stored = localStorage.getItem(OBSIDIAN_FOLDER_KEY);
+      return stored === null ? OBSIDIAN_DEFAULT_FOLDER : stored;
+    } catch { return OBSIDIAN_DEFAULT_FOLDER; }
   }
 
   // Obsidian filenames can't contain these, and a stray one silently
@@ -2804,6 +2820,20 @@
     if (e.target === obsidianModal) closeObsidianModal();
   });
 
+  // Reflects the saved destination in the Actions panel so it's visible
+  // without opening the modal.
+  function renderObsidianCurrent() {
+    const el = document.getElementById('obsidianCurrent');
+    if (!el) return;
+    const vault = getObsidianVault();
+    if (!vault) {
+      el.textContent = 'Not set up yet — where SEND TO OBSIDIAN files your notes.';
+      return;
+    }
+    const folder = getObsidianFolder();
+    el.textContent = `Saving to ${vault}${folder ? ' / ' + folder : ' (vault root)'}`;
+  }
+
   obsidianSaveBtn.addEventListener('click', () => {
     const vault = obsidianVaultInput.value.trim();
     if (!vault) {
@@ -2816,8 +2846,9 @@
     } catch { /* private browsing — the send below still works this once */ }
     const item = pendingObsidianItem;
     closeObsidianModal();
+    renderObsidianCurrent();
     if (item) sendToObsidian(item);
-    else showToast('Obsidian vault saved');
+    else showToast(`Notes will save to ${vault}${obsidianFolderInput.value.trim() ? ' / ' + obsidianFolderInput.value.trim() : ''}`);
   });
 
   function openObsidianSetup(item) {
@@ -3278,6 +3309,7 @@
       profileName.value = currentUser.full_name || '';
       profileEmail.value = currentUser.email || '';
     }
+    renderObsidianCurrent();
     actionsModal.classList.remove('hidden');
     loadPreferences();
   }
@@ -3294,6 +3326,13 @@
   openTokensBtn.addEventListener('click', () => {
     closeActionsModal();
     openTokenModal();
+  });
+
+  document.getElementById('openObsidianBtn').addEventListener('click', () => {
+    closeActionsModal();
+    // No item — this is pure settings, so saving just stores and confirms
+    // rather than immediately firing a note across.
+    openObsidianSetup(null);
   });
 
   actionsLogoutBtn.addEventListener('click', () => {
