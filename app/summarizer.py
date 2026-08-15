@@ -293,6 +293,7 @@ def build_prompt(
     title: str | None = None,
     description: str | None = None,
     transcript_segments: list[dict] | None = None,
+    known_tags: list[str] | None = None,
 ) -> str:
     category_list = ", ".join(CATEGORIES)
     structure = _structure_instructions(length, format)
@@ -439,6 +440,28 @@ def build_prompt(
         "write NONE immediately after the colon on this same line instead of a list.>"
     )
 
+    # Free-text, deliberately NOT constrained to a fixed vocabulary. The
+    # CATEGORY list above is the coarse, human-facing shelf; these are the
+    # fine-grained signal ("Proxmox", "RAG", "OSRS ironman") that a fixed
+    # list could never keep up with — every gap in one previously meant a
+    # code change. Existing tags are offered as a reuse hint so the set
+    # stays consistent without being hardcoded.
+    reuse_hint = ""
+    if known_tags:
+        reuse_hint = (
+            " You have used these tags before — REUSE an existing one whenever it genuinely "
+            f"fits rather than coining a near-duplicate: {', '.join(known_tags[:60])}."
+        )
+    header_lines.append(
+        "TAGS: <3-6 specific topic tags for this video, comma-separated on this same line. "
+        "Name the concrete tools, technologies, games, people, or subjects actually discussed "
+        "(e.g. 'Proxmox', 'Docker', 'RAG', 'Old School RuneScape', 'index funds') — not broad "
+        "genres, which the CATEGORY line already covers. Title Case. No hashtags, no "
+        "duplicates of each other."
+        + reuse_hint
+        + ">"
+    )
+
     header_lines.append("---")
     header = "\n".join(header_lines)
 
@@ -534,6 +557,7 @@ def _parse_response(raw_text: str) -> dict:
     category = "Other"
     answer = None
     true_title = None
+    tags: list[str] = []
     sentiment_label = None
     sentiment_blurb = None
     highlight = None
@@ -575,6 +599,13 @@ def _parse_response(raw_text: str) -> dict:
                 label, blurb = sentiment_raw, ""
             sentiment_label = label.strip() or None
             sentiment_blurb = blurb.strip() or None
+            idx += 1
+        elif upper.startswith("TAGS:"):
+            raw_tags = stripped.split(":", 1)[1]
+            for part in raw_tags.split(","):
+                tag = part.strip().strip('"').lstrip("#").strip()
+                if tag and tag.upper() != "NONE" and tag not in tags:
+                    tags.append(tag)
             idx += 1
         elif upper.startswith("TRUE_TITLE:"):
             val = stripped.split(":", 1)[1].strip().strip('"')
@@ -661,6 +692,7 @@ def _parse_response(raw_text: str) -> dict:
         "summary": _strip_markdown(summary),
         "answer": _strip_markdown(answer),
         "true_title": _strip_markdown(true_title),
+        "tags": tags[:8],
         "sentiment_label": sentiment_label,
         "sentiment_blurb": _strip_markdown(sentiment_blurb),
         "highlight": _strip_markdown(highlight),
@@ -719,6 +751,7 @@ def summarize(
     description: str | None = None,
     provider: str = "anthropic",
     transcript_segments: list[dict] | None = None,
+    known_tags: list[str] | None = None,
 ) -> dict:
     """
     Summarize a transcript with the chosen provider. Returns
@@ -735,6 +768,7 @@ def summarize(
     prompt = build_prompt(
         truncated, length=length, format=format, comments=comments,
         title=title, description=description, transcript_segments=transcript_segments,
+        known_tags=known_tags,
     )
 
     raw = _call_provider(provider, prompt, client=client)

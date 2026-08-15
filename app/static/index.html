@@ -643,6 +643,77 @@
      as visible blank space throughout the card. */
   .summary-long-content { line-height: 1.6; }
 
+  /* ---------- questions ---------- */
+  .q-row {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .q-row:last-of-type { border-bottom: none; }
+
+  .q-prompt {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--paper);
+    margin-bottom: 8px;
+  }
+
+  .q-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .q-option {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 6px 11px;
+    border-radius: 20px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .q-option:hover { border-color: var(--amber-dim); color: var(--paper); }
+
+  .q-option.selected {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .q-progress {
+    font-size: 10.5px;
+    color: var(--slate);
+    margin-top: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .questions-empty { font-size: 12px; color: var(--slate); padding: 8px 0; }
+
+  /* ---------- topic tags ---------- */
+  /* Visually quieter than category pills: categories are the shelf you
+     browse by, tags are the fine detail underneath. */
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 8px 0 4px;
+  }
+
+  .topic-tag {
+    font-size: 10px;
+    color: var(--slate);
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 2px 7px;
+    letter-spacing: 0.02em;
+  }
+
   .history-empty {
     color: var(--slate);
     font-size: 13px;
@@ -1933,8 +2004,8 @@
         <div id="resultChannelDetails"></div>
         <div class="pill-wrap card-pill-row">
           <span class="pill-wrap" id="categoryPills"></span>
-          <span id="sentimentPillContainer"></span>
         </div>
+        <div id="resultTags"></div>
         <div class="title-answer" id="titleAnswer"></div>
         <div class="result-meta">
           <span class="video-id mono" id="videoId"></span>
@@ -1943,9 +2014,9 @@
         <div class="summary-view-container">
           <div class="view-toggle hidden" id="viewToggle">
             <div class="view-toggle-btn active mono" role="button" tabindex="0" data-view="short">SHORT</div>
-            <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="long">LONG</div>
+            <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="questions">QUESTIONS</div>
           </div>
-          <div class="summary-text summary-long-content hidden" id="summaryText"></div>
+          <div class="summary-questions hidden" id="questionsPanel"></div>
           <div class="key-points-list summary-short-content" id="keyPointsList"></div>
         </div>
         <div id="chaptersContainer"></div>
@@ -2311,8 +2382,9 @@
   const resultTitle = document.getElementById('resultTitle');
   const resultVideoDetails = document.getElementById('resultVideoDetails');
   const categoryPills = document.getElementById('categoryPills');
-  const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const commentsBlockContainer = document.getElementById('commentsBlockContainer');
+  const questionsPanel = document.getElementById('questionsPanel');
+  const resultTags = document.getElementById('resultTags');
   const resultChannelDetails = document.getElementById('resultChannelDetails');
   const saveInsightsBox = document.getElementById('saveInsightsBox');
   const saveName = document.getElementById('saveName');
@@ -2605,7 +2677,8 @@
     container.querySelectorAll('.view-toggle-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.view === btn.dataset.view);
     });
-    container.querySelector('.summary-long-content').classList.toggle('hidden', isShort);
+    const questions = container.querySelector('.summary-questions');
+    if (questions) questions.classList.toggle('hidden', isShort);
     container.querySelector('.summary-short-content').classList.toggle('hidden', !isShort);
   });
 
@@ -2614,7 +2687,7 @@
     viewToggle.querySelectorAll('.view-toggle-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.view === mode);
     });
-    summaryText.classList.toggle('hidden', isShort);
+    questionsPanel.classList.toggle('hidden', isShort);
     keyPointsList.classList.toggle('hidden', !isShort);
   }
 
@@ -2709,6 +2782,88 @@
         ${detailRows(rows)}
       </div>
     </details>`;
+  }
+
+  // ---------- questions ----------
+  // Fetched rather than hardcoded so the server owns the question set and
+  // the two can't drift apart.
+  let QUESTIONS = [];
+
+  async function loadQuestions() {
+    try {
+      const res = await fetch('/questions');
+      if (res.ok) QUESTIONS = await res.json();
+    } catch { /* questions panel just stays empty */ }
+  }
+
+  function questionsHtml(item) {
+    if (!QUESTIONS.length) return '<div class="questions-empty mono">Loading…</div>';
+    const answers = item.feedback || {};
+    const rows = QUESTIONS.map(q => {
+      const chosen = answers[q.key];
+      const opts = q.options.map(o =>
+        `<button type="button" class="q-option mono${chosen === o.value ? ' selected' : ''}"
+                 data-question="${escapeHtml(q.key)}" data-value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</button>`
+      ).join('');
+      return `<div class="q-row"><div class="q-prompt">${escapeHtml(q.prompt)}</div><div class="q-options">${opts}</div></div>`;
+    }).join('');
+    const answered = QUESTIONS.filter(q => answers[q.key]).length;
+    return `<div class="questions-panel" data-summary-id="${item.id}">
+      ${rows}
+      <div class="q-progress mono">${answered} of ${QUESTIONS.length} answered${answered ? ' · tap again to clear' : ''}</div>
+    </div>`;
+  }
+
+  // Delegated so it covers every card plus the fresh-result view.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.q-option');
+    if (!btn) return;
+    const panel = btn.closest('.questions-panel');
+    if (!panel) return;
+    const summaryId = panel.dataset.summaryId;
+    if (!summaryId) return;
+
+    const key = btn.dataset.question;
+    const wasSelected = btn.classList.contains('selected');
+    // Tapping the chosen answer again clears it — an accidental tap
+    // shouldn't be permanent in a dataset meant to reflect real opinion.
+    const value = wasSelected ? '' : btn.dataset.value;
+
+    // Optimistic: this is a one-tap interaction, waiting on the network
+    // before showing the selection would feel broken.
+    panel.querySelectorAll(`.q-option[data-question="${CSS.escape(key)}"]`)
+      .forEach(b => b.classList.remove('selected'));
+    if (value) btn.classList.add('selected');
+    updateQuestionProgress(panel);
+
+    try {
+      const res = await fetch(`/history/${summaryId}/feedback`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: { [key]: value } }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      // Put the UI back rather than leaving a selection that never saved.
+      panel.querySelectorAll(`.q-option[data-question="${CSS.escape(key)}"]`)
+        .forEach(b => b.classList.remove('selected'));
+      if (wasSelected) btn.classList.add('selected');
+      updateQuestionProgress(panel);
+      showToast('Couldn’t save that answer', true);
+    }
+  });
+
+  function updateQuestionProgress(panel) {
+    const el = panel.querySelector('.q-progress');
+    if (!el) return;
+    const answered = panel.querySelectorAll('.q-option.selected').length;
+    el.textContent = `${answered} of ${QUESTIONS.length} answered${answered ? ' · tap again to clear' : ''}`;
+  }
+
+  // Fine-grained topic tags, distinct from the coarse category pills.
+  function tagsHtml(item) {
+    if (!item.tags || !item.tags.length) return '';
+    return `<div class="tag-row">${item.tags.map(t => `<span class="topic-tag mono">${escapeHtml(t)}</span>`).join('')}</div>`;
   }
 
   function categoryPillsHtml(category) {
@@ -3587,6 +3742,7 @@
       // Auth state first: it decides which views are even available, and
       // catches a session that expired while the tab sat open.
       await refreshAuthState();
+    loadQuestions();
       if (!currentUser) return;
       if (!queueView.classList.contains('hidden')) await loadQueue();
       else if (!glossaryView.classList.contains('hidden')) await loadGlossary();
@@ -4046,7 +4202,8 @@
               </div>
             </div>
             ${videoDetailsHtml(item)}${channelDetailsHtml(item)}
-            <div class="pill-wrap card-pill-row">${categoryPillsHtml(item.category)}${sentimentPillHtml(item)}</div>
+            <div class="pill-wrap card-pill-row">${categoryPillsHtml(item.category)}</div>
+            ${tagsHtml(item)}
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
               ${item.playlist_title ? `<span class="playlist-badge mono">📼 ${escapeHtml(item.playlist_title)}</span>` : ''}
@@ -4059,9 +4216,9 @@
               ${item.key_points && item.key_points.length > 0 ? `
                 <div class="view-toggle">
                   <div class="view-toggle-btn active mono" role="button" tabindex="0" data-view="short">SHORT</div>
-                  <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="long">LONG</div>
+                  <div class="view-toggle-btn mono" role="button" tabindex="0" data-view="questions">QUESTIONS</div>
                 </div>
-                <div class="summary-long-content hidden">${longSummaryHtml(item.summary, item.glossary)}</div>
+                <div class="summary-questions hidden">${questionsHtml(item)}</div>
                 <div class="key-points-list summary-short-content">${keyPointsHtml(item.key_points, item.glossary)}</div>
               ` : `<div class="summary-long-content">${longSummaryHtml(item.summary, item.glossary)}</div>`}
             </div>
@@ -4465,8 +4622,11 @@
       }
       setSummaryView('short');
       chaptersContainer.innerHTML = chaptersHtml(data);
-      sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       commentsBlockContainer.innerHTML = commentsBlockHtml(data);
+      resultTags.innerHTML = tagsHtml(data);
+      // Feedback needs a saved row to attach to; anonymous summaries
+      // aren't persisted, so there's nothing to answer against.
+      questionsPanel.innerHTML = data.saved ? questionsHtml({ id: data.id, feedback: null }) : '';
 
       lastSummarizedUrl = rawUrl;
       saveInsightsBox.classList.toggle('hidden', !!currentUser);

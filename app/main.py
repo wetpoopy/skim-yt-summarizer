@@ -133,6 +133,7 @@ class GlossaryEntry(BaseModel):
 
 
 class SummarizeResponse(BaseModel):
+    id: int | None = None          # the saved Summary row, when logged in
     video_id: str
     summary: str
     category: str
@@ -156,6 +157,7 @@ class SummarizeResponse(BaseModel):
     counterpoint: str | None = None
     title_answer: str | None = None
     true_title: str | None = None
+    tags: list[str] = []
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
     glossary: list[GlossaryEntry] = []
@@ -189,10 +191,12 @@ class HistoryItem(BaseModel):
     counterpoint: str | None = None
     title_answer: str | None = None
     true_title: str | None = None
+    tags: list[str] = []
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
     glossary: list[GlossaryEntry] = []
     status: str = "unread"
+    feedback: dict | None = None
     playlist_id: str | None = None
     playlist_title: str | None = None
 
@@ -229,6 +233,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
     key_points = json.loads(r.key_points_json) if r.key_points_json else []
     glossary = json.loads(r.glossary_json) if r.glossary_json else []
     return SummarizeResponse(
+        id=r.id,
         video_id=r.video_id,
         summary=r.summary_text,
         category=r.category,
@@ -252,6 +257,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         true_title=r.true_title,
+        tags=json.loads(r.tags_json) if r.tags_json else [],
         chapters=[Chapter(**c) for c in chapters],
         key_points=[KeyPoint(**k) for k in key_points],
         glossary=[GlossaryEntry(**g) for g in glossary],
@@ -304,6 +310,7 @@ def _summarize_and_save(
         description=metadata.get("description"),
         provider=provider,
         transcript_segments=transcript_data.get("segments"),
+        known_tags=_known_tags_for(db, user),
     )
 
     chapters = result.get("chapters") or []
@@ -318,6 +325,7 @@ def _summarize_and_save(
     )
 
     saved = False
+    saved_id = None
     if user is not None:
         row = Summary(
             user_id=user.id,
@@ -343,6 +351,7 @@ def _summarize_and_save(
             counterpoint=result.get("counterpoint"),
             title_answer=result.get("answer"),
             true_title=result.get("true_title"),
+            tags_json=json.dumps(result["tags"]) if result.get("tags") else None,
             chapters_json=json.dumps(chapters) if chapters else None,
             key_points_json=json.dumps(key_points) if key_points else None,
             glossary_json=json.dumps(glossary) if glossary else None,
@@ -352,9 +361,12 @@ def _summarize_and_save(
         )
         db.add(row)
         db.commit()
+        db.refresh(row)
+        saved_id = row.id
         saved = True
 
     return SummarizeResponse(
+        id=saved_id,
         video_id=transcript_data["video_id"],
         summary=result["summary"],
         category=result["category"],
@@ -377,6 +389,7 @@ def _summarize_and_save(
         counterpoint=result.get("counterpoint"),
         title_answer=result.get("answer"),
         true_title=result.get("true_title"),
+        tags=result.get("tags") or [],
         chapters=chapters,
         key_points=key_points,
         glossary=glossary,
@@ -589,10 +602,12 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
         true_title=r.true_title,
+        tags=json.loads(r.tags_json) if r.tags_json else [],
         chapters=chapters,
         key_points=key_points,
         glossary=glossary,
         status=r.status or "unread",
+        feedback=json.loads(r.feedback_json) if r.feedback_json else None,
         playlist_id=r.playlist_id,
         playlist_title=r.playlist_title,
     )
@@ -690,6 +705,121 @@ def update_history_status(
     row.status = body.status
     db.commit()
     return _row_to_history_item(row)
+
+
+# The Questions tab. Answers are explicit preference data — the one signal
+# that genuinely can't be reconstructed later, so it's stored as given and
+# never inferred. Keys/values are validated against QUESTIONS so a typo or
+# a stale client can't quietly poison the dataset.
+QUESTIONS = [
+    {
+        "key": "worth_it",
+        "prompt": "Was this worth your time?",
+        "options": [("definitely", "Definitely"), ("mostly", "Mostly"), ("not_really", "Not really"), ("no", "No")],
+    },
+    {
+        "key": "novelty",
+        "prompt": "How much was new to you?",
+        "options": [("all_new", "All new"), ("some_new", "Some new"), ("knew_most", "Knew most")],
+    },
+    {
+        "key": "channel_again",
+        "prompt": "More from this channel?",
+        "options": [("yes", "Yes"), ("maybe", "Maybe"), ("never", "Never")],
+    },
+    {
+        "key": "will_act",
+        "prompt": "Will you act on this?",
+        "options": [("already_did", "Already did"), ("plan_to", "Plan to"), ("no", "No")],
+    },
+    {
+        "key": "depth",
+        "prompt": "Right level of depth?",
+        "options": [("too_shallow", "Too shallow"), ("just_right", "Just right"), ("too_deep", "Too deep")],
+    },
+]
+
+_VALID_ANSWERS = {q["key"]: {value for value, _ in q["options"]} for q in QUESTIONS}
+
+
+class FeedbackUpdate(BaseModel):
+    answers: dict[str, str]
+
+
+@app.get("/questions", include_in_schema=False)
+def list_questions():
+    """The question set, so the client never hardcodes its own copy."""
+    return [
+        {"key": q["key"], "prompt": q["prompt"],
+         "options": [{"value": v, "label": l} for v, l in q["options"]]}
+        for q in QUESTIONS
+    ]
+
+
+@app.patch("/history/{summary_id}/feedback", response_model=HistoryItem)
+def update_history_feedback(
+    summary_id: int,
+    body: FeedbackUpdate,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    row = db.scalar(select(Summary).where(Summary.id == summary_id, Summary.user_id == user.id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+
+    current = json.loads(row.feedback_json) if row.feedback_json else {}
+    for key, value in body.answers.items():
+        if key not in _VALID_ANSWERS:
+            raise HTTPException(status_code=422, detail=f"Unknown question: {key}")
+        if value is None or value == "":
+            current.pop(key, None)  # tapping the selected answer again clears it
+            continue
+        if value not in _VALID_ANSWERS[key]:
+            raise HTTPException(status_code=422, detail=f"Invalid answer for {key}: {value}")
+        current[key] = value
+
+    row.feedback_json = json.dumps(current) if current else None
+    db.commit()
+    return _row_to_history_item(row)
+
+
+@app.get("/tags")
+def list_tags(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Every tag across the user's library with a usage count, most-used
+    first. Doubles as the reuse hint fed back into the summarize prompt."""
+    rows = db.scalars(
+        select(Summary).where(Summary.user_id == user.id, Summary.tags_json.is_not(None))
+    ).all()
+    counts: dict[str, int] = {}
+    for r in rows:
+        try:
+            for tag in json.loads(r.tags_json) or []:
+                counts[tag] = counts.get(tag, 0) + 1
+        except (ValueError, TypeError):
+            continue
+    return [
+        {"tag": tag, "count": count}
+        for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower()))
+    ]
+
+
+def _known_tags_for(db: Session, user: User | None, limit: int = 60) -> list[str]:
+    """Most-used existing tags, passed to the prompt so new summaries reuse
+    the user's established vocabulary instead of coining near-duplicates."""
+    if user is None:
+        return []
+    rows = db.scalars(
+        select(Summary).where(Summary.user_id == user.id, Summary.tags_json.is_not(None))
+        .order_by(Summary.created_at.desc()).limit(200)
+    ).all()
+    counts: dict[str, int] = {}
+    for r in rows:
+        try:
+            for tag in json.loads(r.tags_json) or []:
+                counts[tag] = counts.get(tag, 0) + 1
+        except (ValueError, TypeError):
+            continue
+    return [t for t, _ in sorted(counts.items(), key=lambda kv: -kv[1])][:limit]
 
 
 def _archive_glossary_terms(db: Session, user_id: int, summaries: list[Summary]) -> None:

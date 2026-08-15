@@ -82,6 +82,14 @@ class Summary(Base):
     counterpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_points_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     glossary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Free-text topic tags ("Proxmox", "RAG") — the fine-grained signal
+    # under the coarse category. Not drawn from any fixed vocabulary.
+    tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The user's own answers to the Questions tab, e.g.
+    # {"worth_it": "definitely", "novelty": "some_new"}. This is
+    # explicit preference data that can't be reconstructed after the
+    # fact, which is why it's captured at read time.
+    feedback_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     # An honest replacement title, set only when the real one materially
