@@ -320,20 +320,25 @@ def build_prompt(
     # at all while "How To Master N8N API Calls" did — inconsistent for no
     # reason the reader can see. Now it's the one-glance takeaway on every
     # summary; it just answers the title's question when there is one.
+    # Deliberately hard-capped and stripped of hedging: this is the
+    # one-glance line, and every wasted word costs it. Density over
+    # completeness — the key points below carry the detail.
+    answer_rules = (
+        "ONE sentence, 25 words maximum. Maximum information per word. "
+        "Start with the substance — no lead-ins like 'This video explains', 'The video covers', "
+        "'In this video', or 'The speaker argues'. No hedging ('essentially', 'basically', "
+        "'arguably', 'it seems'). No filler adjectives. State the specific finding, number, "
+        "method, or conclusion rather than describing that one exists. "
+        "Never write NONE — always produce this."
+    )
     if title:
         header_lines.append(
-            f'ANSWER: <the single most useful thing to know from this video, in 1-2 sentences, '
-            f'based on the transcript. If the title "{title}" poses a question or promises to '
-            "reveal/explain something, answer it directly here. Otherwise give the bottom line: "
-            "what the video actually delivers and the main thing a viewer walks away with. "
-            "Never write NONE — always produce this.>"
+            f'ANSWER: <the single most useful thing to know from this video. If the title '
+            f'"{title}" asks a question or promises something, answer it outright. Otherwise '
+            f"state the video's core claim or finding. {answer_rules}>"
         )
     else:
-        header_lines.append(
-            "ANSWER: <the single most useful thing to know from this video, in 1-2 sentences, "
-            "based on the transcript — the bottom line a viewer walks away with. "
-            "Never write NONE — always produce this.>"
-        )
+        header_lines.append(f"ANSWER: <the single most useful thing to know from this video. {answer_rules}>")
 
     if title:
         header_lines.append(
@@ -378,11 +383,13 @@ def build_prompt(
             "SENTIMENT: <one of Positive, Mostly Positive, Mostly Negative, Negative — pick "
             "whichever side the comments lean toward overall, even if opinion is genuinely "
             "split; never answer with a neutral/'mixed' label, always lean one way> "
-            "— <1-2 sentence blurb on common themes in the comments>"
+            "— <ONE sentence, 20 words max, naming the single most common specific theme. "
+            "No lead-ins like 'Commenters say' or 'Viewers found' — start with the substance. "
+            "Say what they actually praised or objected to, not that they praised or objected.>"
         )
         header_lines.append(
-            "HIGHLIGHT: <scan the comments below for the strongest, most substantive praise or "
-            "recurring positive theme — what viewers valued most. 1-2 sentences summarizing it. "
+            "HIGHLIGHT: <the strongest specific praise in the comments — what viewers valued "
+            "most, concretely. ONE sentence, 20 words max, no lead-in phrases, no hedging. "
             "If comments are overwhelmingly critical with nothing notable to praise, write NONE. "
             "Do not invent praise that isn't actually present in the comments.>"
         )
@@ -398,11 +405,12 @@ def build_prompt(
         )
         header_lines.append(
             "COUNTERPOINT: <scan ALL the comments below (not just the highest-liked) for the "
-            "strongest substantive criticism, disagreement, correction, or counterargument to "
-            "the video's claims — the 'other side' someone deciding whether to trust this video "
-            "would want to know about. 1-2 sentences summarizing it. If the comments raise no "
-            "real criticism (just praise, jokes, or unrelated chatter), write NONE. Do not "
-            "invent a counterpoint that isn't actually present in the comments.>"
+            "strongest substantive criticism, correction, or counterargument to the video's "
+            "claims — what someone deciding whether to trust this video would want to know. "
+            "ONE sentence, 20 words max, no lead-in phrases, no hedging. State the actual "
+            "objection, not that an objection exists. If the comments raise no real criticism "
+            "(just praise, jokes, or unrelated chatter), write NONE. Do not invent a "
+            "counterpoint that isn't actually present in the comments.>"
         )
 
     header_lines.append(

@@ -815,23 +815,61 @@
     border: 1px solid var(--line);
   }
 
-  .sentiment-blurb {
-    font-size: 12.5px;
-    color: var(--slate);
-    line-height: 1.5;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--line);
-  }
 
-  .sentiment-blurb:empty { display: none; }
 
-  .comment-tally {
-    margin-top: 12px;
+  /* One container for everything comment-derived, so the verdict, the
+     breakdown, and the two takes read as a single section instead of
+     four stacked boxes each with their own padding. */
+  .comments-block {
+    margin-top: 14px;
     padding: 12px 14px;
     background: var(--ink);
     border: 1px solid var(--line);
     border-radius: 8px;
+  }
+
+  .comment-verdict {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .comment-verdict-text {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--paper);
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
+  .comment-take {
+    display: flex;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    margin-top: 8px;
+    color: var(--paper);
+  }
+
+  .take-sign {
+    flex-shrink: 0;
+    font-weight: 600;
+    width: 12px;
+  }
+
+  .take-up .take-sign { color: #4ADE80; }
+  .take-down .take-sign { color: var(--danger); }
+
+  .detail-note { color: var(--slate); font-size: 10px; }
+
+  /* Nested inside .comments-block now, so it drops its own chrome. */
+  .comment-tally {
+    margin-top: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
   }
 
   .comment-tally-title {
@@ -889,38 +927,9 @@
   .tally-bar-fill.tally-negative { background: var(--danger); }
   .tally-bar-fill.tally-neutral  { background: var(--slate); }
 
-  .counterpoint-box {
-    font-size: 12.5px;
-    color: var(--paper);
-    line-height: 1.5;
-    margin-top: 12px;
-    padding: 10px 12px;
-    border-left: 2px solid var(--danger);
-    background: rgba(229, 72, 77, 0.06);
-    border-radius: 0 6px 6px 0;
-  }
 
-  .counterpoint-box:empty { display: none; }
 
-  .counterpoint-label {
-    font-size: 10px;
-    color: var(--danger);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    display: block;
-    margin-bottom: 4px;
-  }
 
-  .highlight-box {
-    font-size: 12.5px;
-    color: var(--paper);
-    line-height: 1.5;
-    margin-top: 12px;
-    padding: 10px 12px;
-    border-left: 2px solid #4ADE80;
-    background: rgba(74, 222, 128, 0.06);
-    border-radius: 0 6px 6px 0;
-  }
 
   .save-insights-box {
     margin-top: 20px;
@@ -946,16 +955,7 @@
 
   .save-insights-box .link-btn:hover { background: #FFC04D; }
 
-  .highlight-box:empty { display: none; }
 
-  .highlight-label {
-    font-size: 10px;
-    color: #4ADE80;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    display: block;
-    margin-bottom: 4px;
-  }
 
   .view-toggle {
     display: flex;
@@ -1930,6 +1930,7 @@
         <div class="already-summarized-banner" id="alreadySummarizedBanner"></div>
         <div class="result-title" id="resultTitle"></div>
         <div id="resultVideoDetails"></div>
+        <div id="resultChannelDetails"></div>
         <div class="pill-wrap card-pill-row">
           <span class="pill-wrap" id="categoryPills"></span>
           <span id="sentimentPillContainer"></span>
@@ -1948,10 +1949,7 @@
           <div class="key-points-list summary-short-content" id="keyPointsList"></div>
         </div>
         <div id="chaptersContainer"></div>
-        <div class="sentiment-blurb" id="sentimentBlurb"></div>
-        <div id="commentTallyContainer"></div>
-        <div class="highlight-box" id="highlightBox"></div>
-        <div class="counterpoint-box" id="counterpointBox"></div>
+        <div id="commentsBlockContainer"></div>
 
         <div class="save-insights-box hidden" id="saveInsightsBox">
           <div class="action-row-title">Save your insights</div>
@@ -2314,10 +2312,8 @@
   const resultVideoDetails = document.getElementById('resultVideoDetails');
   const categoryPills = document.getElementById('categoryPills');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
-  const sentimentBlurb = document.getElementById('sentimentBlurb');
-  const commentTallyContainer = document.getElementById('commentTallyContainer');
-  const highlightBox = document.getElementById('highlightBox');
-  const counterpointBox = document.getElementById('counterpointBox');
+  const commentsBlockContainer = document.getElementById('commentsBlockContainer');
+  const resultChannelDetails = document.getElementById('resultChannelDetails');
   const saveInsightsBox = document.getElementById('saveInsightsBox');
   const saveName = document.getElementById('saveName');
   const saveEmail = document.getElementById('saveEmail');
@@ -2643,15 +2639,8 @@
   function videoDetailsHtml(item) {
     const rows = [];
 
-    if (item.channel) {
-      const channelText = escapeHtml(item.channel);
-      const channelValue = item.channel_id
-        ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelText}</a>`
-        : channelText;
-      rows.push(['Channel', channelValue]);
-    }
-    const subs = formatCount(item.subscriber_count);
-    if (subs != null) rows.push(['Subscribers', subs]);
+    // Channel and Subscribers moved to their own CHANNEL DETAILS block —
+    // this one is strictly about the video itself.
     if (item.published_at) {
       const d = new Date(item.published_at);
       if (!isNaN(d.getTime())) {
@@ -2672,7 +2661,52 @@
     return `<details class="video-details">
       <summary class="video-details-toggle mono">▸ VIDEO DETAILS</summary>
       <div class="video-details-body">
-        ${rows.map(([label, value]) => `<div class="detail-row"><span class="detail-label mono">${label}</span><span class="detail-value">${value}</span></div>`).join('')}
+        ${detailRows(rows)}
+      </div>
+    </details>`;
+  }
+
+  function detailRows(rows) {
+    return rows.map(([label, value]) =>
+      `<div class="detail-row"><span class="detail-label mono">${label}</span><span class="detail-value">${value}</span></div>`
+    ).join('');
+  }
+
+  // Same shape as VIDEO DETAILS, but about the channel behind the video —
+  // useful for judging whether a source is worth following, which the
+  // per-video numbers alone don't tell you.
+  function channelDetailsHtml(item) {
+    const cs = item.channel_stats || {};
+    const rows = [];
+
+    if (item.channel) {
+      const channelText = escapeHtml(item.channel);
+      rows.push(['Channel', item.channel_id
+        ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.channel_id)}" target="_blank" rel="noopener">${channelText}</a>`
+        : channelText]);
+    }
+    const subs = formatCount(item.subscriber_count ?? cs.subscriber_count);
+    if (subs != null) rows.push(['Subscribers', subs]);
+    const totalViews = formatCount(cs.total_views);
+    if (totalViews != null) rows.push(['Total views', totalViews]);
+    const videoCount = formatCount(cs.video_count);
+    if (videoCount != null) rows.push(['Videos', videoCount]);
+    const avgViews = formatCount(cs.avg_views_per_video);
+    if (avgViews != null) rows.push(['Avg views / video', avgViews]);
+    const avgLikes = formatCount(cs.avg_likes_per_video);
+    if (avgLikes != null) {
+      // Lifetime average likes isn't available from the API, so this is a
+      // recent-uploads sample — say so rather than implying it's all-time.
+      const note = cs.avg_likes_sample ? ` <span class="detail-note mono">last ${cs.avg_likes_sample}</span>` : '';
+      rows.push(['Avg likes / video', `${avgLikes}${note}`]);
+    }
+
+    if (rows.length === 0) return '';
+
+    return `<details class="video-details">
+      <summary class="video-details-toggle mono">▸ CHANNEL DETAILS</summary>
+      <div class="video-details-body">
+        ${detailRows(rows)}
       </div>
     </details>`;
   }
@@ -2727,6 +2761,32 @@
       <div class="comment-tally-title mono">Comment breakdown <span class="tally-sample">${t.total_classified} of top ${t.total_comments_sampled}</span></div>
       ${body}
     </div>`;
+  }
+
+  // One consolidated block for everything comment-derived. This used to be
+  // four separate stacked sections (blurb, tally, upside, other side), each
+  // with its own padding and heading, which ate a lot of vertical space for
+  // what is really one topic.
+  function commentsBlockHtml(item) {
+    const tally = commentTallyHtml(item);
+    const hasVerdict = item.sentiment_label || item.sentiment_blurb;
+    if (!tally && !hasVerdict && !item.highlight && !item.counterpoint) return '';
+
+    const verdict = hasVerdict
+      ? `<div class="comment-verdict">
+          ${item.sentiment_label ? sentimentPillHtml(item) : ''}
+          ${item.sentiment_blurb ? `<span class="comment-verdict-text">${escapeHtml(item.sentiment_blurb)}</span>` : ''}
+        </div>`
+      : '';
+
+    const takes = [
+      item.highlight ? ['+', 'take-up', item.highlight] : null,
+      item.counterpoint ? ['−', 'take-down', item.counterpoint] : null,
+    ].filter(Boolean).map(([sign, cls, text]) =>
+      `<div class="comment-take ${cls}"><span class="take-sign mono">${sign}</span><span>${escapeHtml(text)}</span></div>`
+    ).join('');
+
+    return `<div class="comments-block">${verdict}${tally}${takes}</div>`;
   }
 
   // ---------- toast ----------
@@ -3985,7 +4045,7 @@
                 <div class="card-menu hidden"></div>
               </div>
             </div>
-            ${videoDetailsHtml(item)}
+            ${videoDetailsHtml(item)}${channelDetailsHtml(item)}
             <div class="pill-wrap card-pill-row">${categoryPillsHtml(item.category)}${sentimentPillHtml(item)}</div>
             ${item.title_answer ? `<div class="title-answer">${escapeHtml(item.title_answer)}</div>` : ''}
             <div class="history-card-meta">
@@ -4005,7 +4065,7 @@
                 <div class="key-points-list summary-short-content">${keyPointsHtml(item.key_points, item.glossary)}</div>
               ` : `<div class="summary-long-content">${longSummaryHtml(item.summary, item.glossary)}</div>`}
             </div>
-            ${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${commentTallyHtml(item)}${item.highlight ? `<div class="highlight-box"><span class="highlight-label mono">The upside</span>${escapeHtml(item.highlight)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}
+            ${chaptersHtml(item)}${commentsBlockHtml(item)}
           </div>
         `;
 
@@ -4392,6 +4452,7 @@
         ? '✓ You already summarized this video — showing your saved summary.' : '';
       resultTitle.innerHTML = titleLinkHtml(data);
       resultVideoDetails.innerHTML = videoDetailsHtml(data);
+      resultChannelDetails.innerHTML = channelDetailsHtml(data);
       categoryPills.innerHTML = categoryPillsHtml(data.category);
       titleAnswer.textContent = data.title_answer || '';
       summaryText.innerHTML = longSummaryHtml(data.summary, data.glossary);
@@ -4405,12 +4466,7 @@
       setSummaryView('short');
       chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
-      sentimentBlurb.textContent = data.sentiment_blurb || '';
-      commentTallyContainer.innerHTML = commentTallyHtml(data);
-      highlightBox.innerHTML = data.highlight
-        ? `<span class="highlight-label mono">The upside</span>${escapeHtml(data.highlight)}` : '';
-      counterpointBox.innerHTML = data.counterpoint
-        ? `<span class="counterpoint-label mono">The other side</span>${escapeHtml(data.counterpoint)}` : '';
+      commentsBlockContainer.innerHTML = commentsBlockHtml(data);
 
       lastSummarizedUrl = rawUrl;
       saveInsightsBox.classList.toggle('hidden', !!currentUser);

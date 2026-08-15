@@ -69,6 +69,9 @@ class Summary(Base):
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     subscriber_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Channel-level stats (lifetime views, upload count, averages) as JSON
+    # so new fields don't each need their own migration.
+    channel_stats_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Per-category comment counts and like totals, e.g.

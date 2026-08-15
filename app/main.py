@@ -40,7 +40,7 @@ from app.models import CustomGlossaryTerm, PendingSummary, Summary, User
 from app.transcript import extract_video_id, get_transcript, TranscriptError
 from app.summarizer import define_terms, normalize_category, summarize, QuotaExceededError, SummarizerError
 from app.ratelimit import check_and_record, FREE_TIER_DAILY_LIMIT
-from app.youtube_metadata import get_channel_subscriber_count, get_video_metadata
+from app.youtube_metadata import get_channel_stats, get_video_metadata
 from app.youtube_comments import get_top_comments
 from app.playlist import estimate_batch_cost, extract_playlist_id, get_playlist_preview
 
@@ -148,6 +148,7 @@ class SummarizeResponse(BaseModel):
     like_count: int | None = None
     duration_seconds: int | None = None
     subscriber_count: int | None = None
+    channel_stats: dict | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
     comment_tally: dict | None = None
@@ -180,6 +181,7 @@ class HistoryItem(BaseModel):
     like_count: int | None = None
     duration_seconds: int | None = None
     subscriber_count: int | None = None
+    channel_stats: dict | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
     comment_tally: dict | None = None
@@ -242,6 +244,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         like_count=r.like_count,
         duration_seconds=r.duration_seconds,
         subscriber_count=r.subscriber_count,
+        channel_stats=json.loads(r.channel_stats_json) if r.channel_stats_json else None,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
         comment_tally=json.loads(r.comment_tally_json) if r.comment_tally_json else None,
@@ -288,9 +291,8 @@ def _summarize_and_save(
 
     metadata = get_video_metadata(transcript_data["video_id"]) or {}
     comments = get_top_comments(transcript_data["video_id"])
-    subscriber_count = (
-        get_channel_subscriber_count(metadata["channel_id"]) if metadata.get("channel_id") else None
-    )
+    channel_stats = get_channel_stats(metadata["channel_id"]) if metadata.get("channel_id") else None
+    subscriber_count = channel_stats.get("subscriber_count") if channel_stats else None
 
     result = summarize(
         transcript_data["text"],
@@ -333,6 +335,7 @@ def _summarize_and_save(
             like_count=metadata.get("like_count"),
             duration_seconds=metadata.get("duration_seconds"),
             subscriber_count=subscriber_count,
+            channel_stats_json=json.dumps(channel_stats) if channel_stats else None,
             sentiment_label=result.get("sentiment_label"),
             sentiment_blurb=result.get("sentiment_blurb"),
             comment_tally_json=json.dumps(result["comment_tally"]) if result.get("comment_tally") else None,
@@ -366,6 +369,7 @@ def _summarize_and_save(
         like_count=metadata.get("like_count"),
         duration_seconds=metadata.get("duration_seconds"),
         subscriber_count=subscriber_count,
+        channel_stats=channel_stats,
         sentiment_label=result.get("sentiment_label"),
         sentiment_blurb=result.get("sentiment_blurb"),
         comment_tally=result.get("comment_tally"),
@@ -577,6 +581,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         like_count=r.like_count,
         duration_seconds=r.duration_seconds,
         subscriber_count=r.subscriber_count,
+        channel_stats=json.loads(r.channel_stats_json) if r.channel_stats_json else None,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
         comment_tally=json.loads(r.comment_tally_json) if r.comment_tally_json else None,
