@@ -364,6 +364,33 @@
 
   .queue-dismiss-btn:hover { background: var(--line); color: var(--paper); }
 
+  .queue-bar {
+    display: block;
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .queue-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--amber);
+    border-radius: 3px;
+    /* Long transition because updates arrive on the 5s poll — this keeps
+       the bar creeping rather than jumping between phases. */
+    transition: width 1.2s ease-out;
+  }
+
+  .queue-bar-fill.stalled { background: var(--danger); }
+
+  .queue-pct {
+    font-size: 11px;
+    color: var(--slate);
+    flex-shrink: 0;
+  }
+
   .queue-card-bottom {
     display: flex;
     align-items: center;
@@ -2669,7 +2696,7 @@
     detail.classList.toggle('hidden', !open);
   });
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const btn = e.target.closest('.view-toggle-btn');
     if (!btn) return;
     const container = btn.closest('.summary-view-container');
@@ -2680,7 +2707,31 @@
     const questions = container.querySelector('.summary-questions');
     if (questions) questions.classList.toggle('hidden', isShort);
     container.querySelector('.summary-short-content').classList.toggle('hidden', !isShort);
+
+    // Self-heal: if the question set never loaded (offline at boot, a
+    // failed request), fetch it now and fill the panel in rather than
+    // leaving it stuck on "Loading…" with no way back.
+    if (!isShort && questions && !QUESTIONS.length) {
+      await loadQuestions();
+      if (QUESTIONS.length) {
+        const card = container.closest('.history-card');
+        const id = card ? card.dataset.summaryId : (questions.querySelector('.questions-panel') || {}).dataset?.summaryId;
+        if (id) questions.innerHTML = questionsHtml({ id, feedback: questionAnswersFor(id) });
+      }
+    }
   });
+
+  // Answers already rendered into the DOM, so a re-render after a late
+  // question-set load doesn't wipe selections the user already made.
+  function questionAnswersFor(summaryId) {
+    const panel = document.querySelector(`.questions-panel[data-summary-id="${CSS.escape(String(summaryId))}"]`);
+    if (!panel) return null;
+    const answers = {};
+    panel.querySelectorAll('.q-option.selected').forEach(b => {
+      answers[b.dataset.question] = b.dataset.value;
+    });
+    return Object.keys(answers).length ? answers : null;
+  }
 
   function setSummaryView(mode) {
     const isShort = mode === 'short';
@@ -3742,7 +3793,7 @@
       // Auth state first: it decides which views are even available, and
       // catches a session that expired while the tab sat open.
       await refreshAuthState();
-    loadQuestions();
+      await loadQuestions();
       if (!currentUser) return;
       if (!queueView.classList.contains('hidden')) await loadQueue();
       else if (!glossaryView.classList.contains('hidden')) await loadGlossary();
@@ -3834,14 +3885,49 @@
     // Processing items can sit for a while on a slow video, but the user
     // should always be able to give up on one (e.g. queued the wrong
     // link, or it's been stuck) instead of having no way to clear it.
+    const { pct, label, stalled } = queueProgress(item);
     return `<div class="queue-card">
       <div class="queue-card-top">
         ${titleLink}
         <button class="queue-dismiss-btn mono" data-id="${item.id}" title="Cancel">✕</button>
       </div>
-      <div class="queue-status-line mono">⏳ Processing…</div>
-      <div class="queue-time mono">${when}</div>
+      <div class="queue-status-line mono">${stalled ? '⚠' : '⏳'} ${escapeHtml(label)}</div>
+      <div class="queue-bar"><span class="queue-bar-fill${stalled ? ' stalled' : ''}" style="width:${pct}%"></span></div>
+      <div class="queue-card-bottom">
+        <span class="queue-time mono">${when}</span>
+        <span class="queue-pct mono">${pct}%</span>
+      </div>
     </div>`;
+  }
+
+  // There's no progress signal from the server — a queued job is one
+  // opaque background task — so this is an elapsed-time estimate against
+  // how long these actually take, matching the phases the backend really
+  // runs through. Deliberately never reaches 100%: only the job leaving
+  // the queue means done, and a fake 100% that then sits there is worse
+  // than an honest 90%.
+  const QUEUE_PHASES = [
+    { until: 8,   pct: 15, label: 'Fetching the transcript…' },
+    { until: 16,  pct: 35, label: 'Pulling video details…' },
+    { until: 26,  pct: 55, label: 'Reading the comments…' },
+    { until: 55,  pct: 80, label: 'Writing your summary…' },
+    { until: 90,  pct: 92, label: 'Wrapping up…' },
+  ];
+  // Past this, something has almost certainly gone wrong — the backend
+  // marks genuine failures, but a hung request can leave a row parked.
+  const QUEUE_STALLED_SECONDS = 240;
+
+  function queueProgress(item) {
+    const started = new Date(item.created_at).getTime();
+    const elapsed = Math.max(0, (Date.now() - started) / 1000);
+
+    if (elapsed > QUEUE_STALLED_SECONDS) {
+      return { pct: 95, label: 'Taking longer than usual — you can cancel or wait', stalled: true };
+    }
+    for (const phase of QUEUE_PHASES) {
+      if (elapsed < phase.until) return { pct: phase.pct, label: phase.label, stalled: false };
+    }
+    return { pct: 95, label: 'Almost there…', stalled: false };
   }
 
   async function loadQueue() {
@@ -4690,6 +4776,10 @@
 
   (async () => {
     await refreshAuthState();
+    // Before any view renders: questionsHtml() reads QUESTIONS at render
+    // time and nothing re-renders the cards afterwards, so loading this
+    // late leaves every Questions panel stuck on "Loading…".
+    await loadQuestions();
     // A refresh should leave the user wherever they were, not bounce
     // them back to a fixed screen — restore whichever tab was last open
     // this session. First-ever load of the session (nothing remembered
