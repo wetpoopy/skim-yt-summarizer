@@ -81,6 +81,9 @@ class Summary(Base):
     glossary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # An honest replacement title, set only when the real one materially
+    # misrepresents the video. NULL means the original was fine.
+    true_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     chapters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     playlist_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     playlist_title: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -335,6 +335,19 @@ def build_prompt(
             "Never write NONE — always produce this.>"
         )
 
+    if title:
+        header_lines.append(
+            f'TRUE_TITLE: <judge whether the title "{title}" honestly represents what the '
+            "video actually delivers. If it does — even loosely — write NONE. Only when it "
+            "genuinely misleads (promises something never delivered, withholds the answer it "
+            "advertises, wildly overstates the scale/result, or is vague clickbait that says "
+            "nothing about the content) write a replacement title of 4-12 words that states "
+            "plainly what the video actually is. No hype, no punctuation tricks, no question "
+            "marks, no ALL CAPS — the title the video would have if it weren't optimizing for "
+            "clicks. Be conservative: a merely punchy or enthusiastic title is NOT misleading, "
+            "and most titles should get NONE.>"
+        )
+
     has_declared_chapters = _looks_like_it_has_timestamps(description, comments)
     timestamped_transcript = ""
     if has_declared_chapters:
@@ -512,6 +525,7 @@ def _parse_response(raw_text: str) -> dict:
     lines = raw_text.split("\n")
     category = "Other"
     answer = None
+    true_title = None
     sentiment_label = None
     sentiment_blurb = None
     highlight = None
@@ -553,6 +567,10 @@ def _parse_response(raw_text: str) -> dict:
                 label, blurb = sentiment_raw, ""
             sentiment_label = label.strip() or None
             sentiment_blurb = blurb.strip() or None
+            idx += 1
+        elif upper.startswith("TRUE_TITLE:"):
+            val = stripped.split(":", 1)[1].strip().strip('"')
+            true_title = None if not val or val.upper() == "NONE" else val
             idx += 1
         elif upper.startswith("COMMENT_SENTIMENT:"):
             idx += 1
@@ -634,6 +652,7 @@ def _parse_response(raw_text: str) -> dict:
         "category": category,
         "summary": _strip_markdown(summary),
         "answer": _strip_markdown(answer),
+        "true_title": _strip_markdown(true_title),
         "sentiment_label": sentiment_label,
         "sentiment_blurb": _strip_markdown(sentiment_blurb),
         "highlight": _strip_markdown(highlight),

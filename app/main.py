@@ -154,6 +154,7 @@ class SummarizeResponse(BaseModel):
     highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
+    true_title: str | None = None
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
     glossary: list[GlossaryEntry] = []
@@ -185,6 +186,7 @@ class HistoryItem(BaseModel):
     highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
+    true_title: str | None = None
     chapters: list[Chapter] = []
     key_points: list[KeyPoint] = []
     glossary: list[GlossaryEntry] = []
@@ -246,6 +248,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
+        true_title=r.true_title,
         chapters=[Chapter(**c) for c in chapters],
         key_points=[KeyPoint(**k) for k in key_points],
         glossary=[GlossaryEntry(**g) for g in glossary],
@@ -336,6 +339,7 @@ def _summarize_and_save(
             highlight=result.get("highlight"),
             counterpoint=result.get("counterpoint"),
             title_answer=result.get("answer"),
+            true_title=result.get("true_title"),
             chapters_json=json.dumps(chapters) if chapters else None,
             key_points_json=json.dumps(key_points) if key_points else None,
             glossary_json=json.dumps(glossary) if glossary else None,
@@ -368,6 +372,7 @@ def _summarize_and_save(
         highlight=result.get("highlight"),
         counterpoint=result.get("counterpoint"),
         title_answer=result.get("answer"),
+        true_title=result.get("true_title"),
         chapters=chapters,
         key_points=key_points,
         glossary=glossary,
@@ -578,6 +583,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
+        true_title=r.true_title,
         chapters=chapters,
         key_points=key_points,
         glossary=glossary,
