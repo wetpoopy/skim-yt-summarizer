@@ -111,6 +111,34 @@
     box-shadow: 0 0 8px var(--amber);
   }
 
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 14px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  .refresh-btn:hover { background: var(--line); color: var(--paper); }
+
+  .refresh-btn.spinning {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    animation: refresh-spin 0.6s linear infinite;
+  }
+
+  @keyframes refresh-spin { to { transform: rotate(360deg); } }
+
   .header-right {
     display: flex;
     flex-direction: column;
@@ -160,6 +188,31 @@
   .auth-area .user-email { color: var(--slate); }
 
   .hidden { display: none !important; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px);
+    max-width: min(420px, calc(100vw - 32px));
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 50;
+    text-align: center;
+  }
+
+  .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+
+  .toast.toast-error { border-color: var(--danger); color: var(--danger); }
 
   /* ---------- history view ---------- */
   #historyView {
@@ -714,6 +767,69 @@
   }
 
   .sentiment-blurb:empty { display: none; }
+
+  .comment-tally {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .comment-tally-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--slate);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .tally-sample { text-transform: none; letter-spacing: 0; opacity: 0.7; }
+
+  .tally-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .tally-row:last-child { margin-bottom: 0; }
+
+  .tally-label {
+    font-size: 11px;
+    width: 58px;
+    flex-shrink: 0;
+  }
+
+  .tally-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 6px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .tally-bar-fill { display: block; height: 100%; border-radius: 3px; }
+
+  .tally-nums {
+    font-size: 11px;
+    color: var(--slate);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .tally-positive { color: #4ADE80; }
+  .tally-negative { color: var(--danger); }
+  .tally-neutral  { color: var(--slate); }
+
+  .tally-bar-fill.tally-positive { background: #4ADE80; }
+  .tally-bar-fill.tally-negative { background: var(--danger); }
+  .tally-bar-fill.tally-neutral  { background: var(--slate); }
 
   .counterpoint-box {
     font-size: 12.5px;
@@ -1712,7 +1828,12 @@
 <body>
 
   <header>
-    <div class="logo"><span class="dot"></span>TLDW</div>
+    <div class="logo">
+      <span class="dot"></span>TLDW
+      <!-- Sits by the logo rather than in the nav row, which scrolls
+           horizontally when it overflows — this stays reachable. -->
+      <button class="refresh-btn mono" id="refreshBtn" type="button" title="Refresh" aria-label="Refresh">↻</button>
+    </div>
     <div class="header-right">
       <div class="auth-area mono" id="authArea"></div>
     </div>
@@ -1770,6 +1891,7 @@
         </div>
         <div id="chaptersContainer"></div>
         <div class="sentiment-blurb" id="sentimentBlurb"></div>
+        <div id="commentTallyContainer"></div>
         <div class="highlight-box" id="highlightBox"></div>
         <div class="counterpoint-box" id="counterpointBox"></div>
 
@@ -1891,6 +2013,22 @@
 
       <div id="tokenList"></div>
       <div class="token-empty mono" id="tokenEmpty">No tokens yet.</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="obsidianModal">
+    <div class="modal-card">
+      <button class="modal-close" id="obsidianModalClose">&times;</button>
+      <h2>Send to Obsidian</h2>
+      <div class="action-row-desc mono" style="margin-bottom:14px;">
+        Your vault name is exactly as it appears in Obsidian's vault switcher.
+        Notes are created with a link back to the video, tags from the
+        categories, and the full summary.
+      </div>
+      <input type="text" class="confirm-input mono" id="obsidianVault" placeholder="Vault name (required)">
+      <input type="text" class="confirm-input mono" id="obsidianFolder" placeholder="Folder, e.g. TLDW (optional)">
+      <div class="action-row-status mono" id="obsidianStatus"></div>
+      <button class="link-btn mono" id="obsidianSaveBtn" style="width:100%;margin-top:12px;">SAVE &amp; SEND</button>
     </div>
   </div>
 
@@ -2104,6 +2242,7 @@
   const categoryPills = document.getElementById('categoryPills');
   const sentimentPillContainer = document.getElementById('sentimentPillContainer');
   const sentimentBlurb = document.getElementById('sentimentBlurb');
+  const commentTallyContainer = document.getElementById('commentTallyContainer');
   const highlightBox = document.getElementById('highlightBox');
   const counterpointBox = document.getElementById('counterpointBox');
   const saveInsightsBox = document.getElementById('saveInsightsBox');
@@ -2476,6 +2615,245 @@
       <summary class="chapters-heading mono">Sections (${item.chapters.length})</summary>
       ${links}
     </details>`;
+  }
+
+  // Counts and like totals per sentiment. The model classified each
+  // comment; the arithmetic was done server-side from YouTube's real
+  // like counts, so these are actual numbers, not an LLM's estimate.
+  function commentTallyHtml(item) {
+    const t = item.comment_tally;
+    if (!t) return '';
+    const rows = [
+      ['positive', 'Positive', 'tally-positive'],
+      ['negative', 'Negative', 'tally-negative'],
+      ['neutral', 'Neutral', 'tally-neutral'],
+    ].filter(([key]) => t[key] && t[key].count > 0);
+    if (!rows.length) return '';
+
+    const maxCount = Math.max(...rows.map(([key]) => t[key].count));
+    const body = rows.map(([key, label, cls]) => {
+      const { count, likes } = t[key];
+      const pct = maxCount ? Math.round((count / maxCount) * 100) : 0;
+      return `<div class="tally-row">
+        <span class="tally-label mono ${cls}">${label}</span>
+        <span class="tally-bar"><span class="tally-bar-fill ${cls}" style="width:${pct}%"></span></span>
+        <span class="tally-nums mono">${count} · ${formatCount(likes) || 0} likes</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="comment-tally">
+      <div class="comment-tally-title mono">Comment breakdown <span class="tally-sample">${t.total_classified} of top ${t.total_comments_sampled}</span></div>
+      ${body}
+    </div>`;
+  }
+
+  // ---------- toast ----------
+  let toastTimer = null;
+
+  function showToast(message, isError) {
+    let el = document.getElementById('toast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast mono';
+      document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.toggle('toast-error', !!isError);
+    el.classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+  }
+
+  // ---------- Obsidian export ----------
+  // Vault name lives in localStorage rather than the account: it's a
+  // property of this device's Obsidian install, and asking the server to
+  // store it would mean a schema change for something one prompt covers.
+  const OBSIDIAN_VAULT_KEY = 'tldw_obsidian_vault';
+  const OBSIDIAN_FOLDER_KEY = 'tldw_obsidian_folder';
+
+  function getObsidianVault() {
+    try { return localStorage.getItem(OBSIDIAN_VAULT_KEY) || ''; } catch { return ''; }
+  }
+
+  function getObsidianFolder() {
+    try { return localStorage.getItem(OBSIDIAN_FOLDER_KEY) || ''; } catch { return ''; }
+  }
+
+  // Obsidian filenames can't contain these, and a stray one silently
+  // breaks the whole obsidian:// call rather than erroring usefully.
+  function safeNoteName(title, videoId) {
+    const base = (title || videoId || 'Untitled').replace(/[\\/:*?"<>|#^[\]]/g, '').trim();
+    return (base.slice(0, 100) || videoId || 'Untitled');
+  }
+
+  function yamlEscape(s) {
+    return '"' + String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  }
+
+  function summaryToMarkdown(item) {
+    const url = watchUrl(item);
+    const cats = (item.category || '').split(',').map(c => c.trim()).filter(Boolean);
+    // Obsidian tags can't contain spaces or '&'.
+    const tags = cats.map(c => c.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+
+    const lines = [];
+    lines.push('---');
+    lines.push(`title: ${yamlEscape(item.title || item.video_id)}`);
+    lines.push(`source: ${url}`);
+    if (item.channel) lines.push(`channel: ${yamlEscape(item.channel)}`);
+    if (item.published_at) lines.push(`published: ${item.published_at.slice(0, 10)}`);
+    lines.push(`summarized: ${new Date(item.created_at || Date.now()).toISOString().slice(0, 10)}`);
+    if (item.duration_seconds) lines.push(`duration: ${formatDuration(item.duration_seconds)}`);
+    lines.push(`tags: [tldw${tags.length ? ', ' + tags.join(', ') : ''}]`);
+    lines.push('---');
+    lines.push('');
+    lines.push(`# ${item.title || item.video_id}`);
+    lines.push('');
+    lines.push(`[Watch on YouTube](${url})`);
+    lines.push('');
+
+    if (item.title_answer) {
+      lines.push(`> [!tldr] The gist`);
+      lines.push(`> ${item.title_answer}`);
+      lines.push('');
+    }
+
+    if (item.key_points && item.key_points.length) {
+      lines.push('## Key points');
+      lines.push('');
+      for (const kp of item.key_points) {
+        lines.push(`- **${kp.point}**`);
+        if (kp.detail && kp.detail !== kp.point) lines.push(`    - ${kp.detail}`);
+      }
+      lines.push('');
+    }
+
+    if (item.summary) {
+      lines.push('## Summary');
+      lines.push('');
+      lines.push(item.summary);
+      lines.push('');
+    }
+
+    if (item.chapters && item.chapters.length) {
+      lines.push('## Sections');
+      lines.push('');
+      for (const ch of item.chapters) {
+        lines.push(`- [${formatDuration(ch.seconds)}](${url}&t=${ch.seconds}s) — ${ch.label}`);
+      }
+      lines.push('');
+    }
+
+    if (item.glossary && item.glossary.length) {
+      lines.push('## Glossary');
+      lines.push('');
+      for (const g of item.glossary) {
+        lines.push(`- **${g.term}** — ${g.definition}`);
+      }
+      lines.push('');
+    }
+
+    const t = item.comment_tally;
+    if (item.sentiment_label || t || item.highlight || item.counterpoint) {
+      lines.push('## What the comments say');
+      lines.push('');
+      if (item.sentiment_label) {
+        lines.push(`**Overall:** ${item.sentiment_label}${item.sentiment_blurb ? ' — ' + item.sentiment_blurb : ''}`);
+        lines.push('');
+      }
+      if (t) {
+        lines.push('| Sentiment | Comments | Likes |');
+        lines.push('| --- | ---: | ---: |');
+        for (const key of ['positive', 'negative', 'neutral']) {
+          if (t[key] && t[key].count > 0) {
+            lines.push(`| ${key[0].toUpperCase() + key.slice(1)} | ${t[key].count} | ${t[key].likes} |`);
+          }
+        }
+        lines.push('');
+      }
+      if (item.highlight) { lines.push(`**The upside:** ${item.highlight}`); lines.push(''); }
+      if (item.counterpoint) { lines.push(`**The other side:** ${item.counterpoint}`); lines.push(''); }
+    }
+
+    lines.push('---');
+    lines.push('*Summarized by [TLDW](https://www.toolazydidntwatch.com)*');
+    return lines.join('\n');
+  }
+
+  async function copyMarkdown(item) {
+    const md = summaryToMarkdown(item);
+    try {
+      await navigator.clipboard.writeText(md);
+      showToast('Markdown copied — paste into Obsidian');
+    } catch {
+      showToast('Couldn’t copy automatically', true);
+    }
+  }
+
+  const obsidianModal = document.getElementById('obsidianModal');
+  const obsidianModalClose = document.getElementById('obsidianModalClose');
+  const obsidianVaultInput = document.getElementById('obsidianVault');
+  const obsidianFolderInput = document.getElementById('obsidianFolder');
+  const obsidianStatus = document.getElementById('obsidianStatus');
+  const obsidianSaveBtn = document.getElementById('obsidianSaveBtn');
+  let pendingObsidianItem = null;
+
+  obsidianModalClose.addEventListener('click', () => closeObsidianModal());
+  obsidianModal.addEventListener('click', (e) => {
+    if (e.target === obsidianModal) closeObsidianModal();
+  });
+
+  obsidianSaveBtn.addEventListener('click', () => {
+    const vault = obsidianVaultInput.value.trim();
+    if (!vault) {
+      obsidianStatus.textContent = 'Vault name is required.';
+      return;
+    }
+    try {
+      localStorage.setItem(OBSIDIAN_VAULT_KEY, vault);
+      localStorage.setItem(OBSIDIAN_FOLDER_KEY, obsidianFolderInput.value.trim());
+    } catch { /* private browsing — the send below still works this once */ }
+    const item = pendingObsidianItem;
+    closeObsidianModal();
+    if (item) sendToObsidian(item);
+    else showToast('Obsidian vault saved');
+  });
+
+  function openObsidianSetup(item) {
+    pendingObsidianItem = item || null;
+    obsidianVaultInput.value = getObsidianVault();
+    obsidianFolderInput.value = getObsidianFolder();
+    obsidianModal.classList.remove('hidden');
+  }
+
+  function closeObsidianModal() {
+    obsidianModal.classList.add('hidden');
+    pendingObsidianItem = null;
+  }
+
+  function sendToObsidian(item) {
+    const vault = getObsidianVault();
+    if (!vault) {
+      openObsidianSetup(item);
+      return;
+    }
+    const md = summaryToMarkdown(item);
+    const folder = getObsidianFolder().replace(/^\/+|\/+$/g, '');
+    const name = safeNoteName(item.title, item.video_id);
+    const filePath = folder ? `${folder}/${name}` : name;
+    const uri = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}&content=${encodeURIComponent(md)}`;
+
+    // Custom-scheme URLs get truncated past a few KB on iOS, which would
+    // silently create a half-written note. Copy instead when it's long —
+    // better a manual paste than a corrupted note.
+    if (uri.length > 6000) {
+      copyMarkdown(item).then(() => {
+        showToast('Too long for a direct hand-off — copied instead, paste into Obsidian');
+      });
+      return;
+    }
+    window.location.href = uri;
   }
 
   function sentimentPillHtml(item) {
@@ -2946,6 +3324,37 @@
     }
   });
 
+  // ---------- refresh ----------
+  // Re-pulls data for whichever view is currently open, so there's no
+  // need to reload the browser (which on the installed/home-screen PWA
+  // is genuinely awkward — there's no address bar to pull down from).
+  const refreshBtn = document.getElementById('refreshBtn');
+
+  refreshBtn.addEventListener('click', async () => {
+    if (refreshBtn.classList.contains('spinning')) return; // already refreshing
+    refreshBtn.classList.add('spinning');
+    try {
+      // Auth state first: it decides which views are even available, and
+      // catches a session that expired while the tab sat open.
+      await refreshAuthState();
+      if (!currentUser) return;
+      if (!queueView.classList.contains('hidden')) await loadQueue();
+      else if (!glossaryView.classList.contains('hidden')) await loadGlossary();
+      else if (!historyView.classList.contains('hidden')) {
+        await loadCategories();
+        await loadHistory();
+      }
+      // The summarize view has nothing server-side to re-pull; refreshing
+      // auth above is the whole job there.
+    } catch {
+      /* leave whatever is on screen alone rather than blanking it */
+    } finally {
+      // Always show at least one full spin, otherwise a fast refresh just
+      // flickers and reads as "nothing happened".
+      setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+    }
+  });
+
   // ---------- history view ----------
   // Remembers which top-level tab was open so a page refresh lands back
   // on it instead of always resetting to one hardcoded view.
@@ -3260,6 +3669,12 @@
       return btn;
     }
 
+    // Export options come first — available regardless of which tab the
+    // card is in, since wanting a note out of an archived summary is just
+    // as likely as an unread one.
+    addMenuItem('SEND TO OBSIDIAN', () => sendToObsidian(item));
+    addMenuItem('COPY MARKDOWN', () => copyMarkdown(item));
+
     if (currentStatusTab === 'archived') {
       addMenuItem('RESTORE', () => setHistoryStatus(item.id, 'unread'));
 
@@ -3378,7 +3793,7 @@
                 <div class="key-points-list summary-short-content">${keyPointsHtml(item.key_points, item.glossary)}</div>
               ` : `<div class="summary-long-content">${longSummaryHtml(item.summary, item.glossary)}</div>`}
             </div>
-            ${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${item.highlight ? `<div class="highlight-box"><span class="highlight-label mono">The upside</span>${escapeHtml(item.highlight)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}
+            ${chaptersHtml(item)}${item.sentiment_blurb ? `<div class="sentiment-blurb">${escapeHtml(item.sentiment_blurb)}</div>` : ''}${commentTallyHtml(item)}${item.highlight ? `<div class="highlight-box"><span class="highlight-label mono">The upside</span>${escapeHtml(item.highlight)}</div>` : ''}${item.counterpoint ? `<div class="counterpoint-box"><span class="counterpoint-label mono">The other side</span>${escapeHtml(item.counterpoint)}</div>` : ''}
           </div>
         `;
 
@@ -3776,6 +4191,7 @@
       chaptersContainer.innerHTML = chaptersHtml(data);
       sentimentPillContainer.innerHTML = sentimentPillHtml(data);
       sentimentBlurb.textContent = data.sentiment_blurb || '';
+      commentTallyContainer.innerHTML = commentTallyHtml(data);
       highlightBox.innerHTML = data.highlight
         ? `<span class="highlight-label mono">The upside</span>${escapeHtml(data.highlight)}` : '';
       counterpointBox.innerHTML = data.counterpoint

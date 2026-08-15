@@ -314,11 +314,25 @@ def build_prompt(
         "another label.>"
     ]
 
+    # Always produced, for every video. This used to be conditional on the
+    # title being a question ("write NONE if it isn't"), which meant a
+    # video called "Obsidian Properties Full Breakdown" got no quick take
+    # at all while "How To Master N8N API Calls" did — inconsistent for no
+    # reason the reader can see. Now it's the one-glance takeaway on every
+    # summary; it just answers the title's question when there is one.
     if title:
         header_lines.append(
-            f'ANSWER: <if the title "{title}" poses a question or promises to reveal/explain '
-            "something, 1-2 sentences directly resolving it based on the transcript. "
-            "If the title isn't a question or claim, write NONE>"
+            f'ANSWER: <the single most useful thing to know from this video, in 1-2 sentences, '
+            f'based on the transcript. If the title "{title}" poses a question or promises to '
+            "reveal/explain something, answer it directly here. Otherwise give the bottom line: "
+            "what the video actually delivers and the main thing a viewer walks away with. "
+            "Never write NONE — always produce this.>"
+        )
+    else:
+        header_lines.append(
+            "ANSWER: <the single most useful thing to know from this video, in 1-2 sentences, "
+            "based on the transcript — the bottom line a viewer walks away with. "
+            "Never write NONE — always produce this.>"
         )
 
     has_declared_chapters = _looks_like_it_has_timestamps(description, comments)
@@ -358,6 +372,16 @@ def build_prompt(
             "recurring positive theme — what viewers valued most. 1-2 sentences summarizing it. "
             "If comments are overwhelmingly critical with nothing notable to praise, write NONE. "
             "Do not invent praise that isn't actually present in the comments.>"
+        )
+        header_lines.append(
+            "COMMENT_SENTIMENT: <classify EVERY numbered comment below. Output one line per "
+            "comment right after this one, formatted EXACTLY 'N: positive' / 'N: negative' / "
+            "'N: neutral' where N is that comment's number — one per line, no blank lines "
+            "between them, no extra commentary, then immediately the '---' line. Use 'neutral' "
+            "only for comments that genuinely express no opinion about the video (questions, "
+            "timestamps, off-topic chatter). Judge sentiment toward the VIDEO/creator, not the "
+            "subject matter — someone angry about the topic but praising the explanation is "
+            "positive.>"
         )
         header_lines.append(
             "COUNTERPOINT: <scan ALL the comments below (not just the highest-liked) for the "
@@ -409,7 +433,12 @@ def build_prompt(
             f"not for the summary itself):\n{timestamped_transcript}"
         )
     if comments:
-        comment_lines = "\n".join(f'[{c["like_count"]} likes] "{c["text"]}"' for c in comments)
+        # Numbered so COMMENT_SENTIMENT can refer to each one by index —
+        # the model classifies, but the counting and like-summing is done
+        # in Python from these same like counts, never by the model.
+        comment_lines = "\n".join(
+            f'{i + 1}. [{c["like_count"]} likes] "{c["text"]}"' for i, c in enumerate(comments)
+        )
         extra_context += (
             "\n\nTOP COMMENTS (shown with like counts — weight your overall sentiment "
             "assessment toward the higher-liked ones, but read every comment when looking "
@@ -490,6 +519,7 @@ def _parse_response(raw_text: str) -> dict:
     chapters = []
     key_points = []
     glossary = []
+    comment_sentiments: dict[int, str] = {}
     idx = 0
 
     while idx < len(lines):
@@ -524,6 +554,21 @@ def _parse_response(raw_text: str) -> dict:
             sentiment_label = label.strip() or None
             sentiment_blurb = blurb.strip() or None
             idx += 1
+        elif upper.startswith("COMMENT_SENTIMENT:"):
+            idx += 1
+            while idx < len(lines):
+                sub = lines[idx].strip().replace("**", "").lstrip("-*# ").strip()
+                if not sub or sub.upper() == "---" or ":" not in sub:
+                    break
+                num_part, label_part = sub.split(":", 1)
+                label = label_part.strip().lower()
+                try:
+                    num = int(num_part.strip().rstrip("."))
+                except ValueError:
+                    break
+                if label in ("positive", "negative", "neutral"):
+                    comment_sentiments[num] = label
+                idx += 1
         elif upper.startswith("HIGHLIGHT:"):
             val = stripped.split(":", 1)[1].strip()
             highlight = None if not val or val.upper() == "NONE" else val
@@ -596,7 +641,45 @@ def _parse_response(raw_text: str) -> dict:
         "chapters": chapters,
         "key_points": key_points,
         "glossary": glossary,
+        "comment_sentiments": comment_sentiments,
     }
+
+
+def tally_comment_sentiment(comments: list[dict] | None, sentiments: dict[int, str]) -> dict | None:
+    """
+    Turn the model's per-comment labels into counts and like totals.
+
+    The arithmetic deliberately happens here rather than asking the model
+    for totals — models are unreliable at summing dozens of numbers, and
+    we already hold the exact like counts that came back from YouTube.
+    The model is only used for the part it's actually good at (judging
+    tone); every number below is computed from real data.
+
+    Comment numbers are 1-based in the prompt. Anything the model failed
+    to classify, or invented an index for, is simply skipped rather than
+    guessed at.
+    """
+    if not comments or not sentiments:
+        return None
+
+    tally = {
+        "positive": {"count": 0, "likes": 0},
+        "negative": {"count": 0, "likes": 0},
+        "neutral": {"count": 0, "likes": 0},
+    }
+    classified = 0
+    for num, label in sentiments.items():
+        if label not in tally or not (1 <= num <= len(comments)):
+            continue
+        tally[label]["count"] += 1
+        tally[label]["likes"] += comments[num - 1].get("like_count") or 0
+        classified += 1
+
+    if not classified:
+        return None
+    tally["total_classified"] = classified
+    tally["total_comments_sampled"] = len(comments)
+    return tally
 
 
 def summarize(
@@ -613,7 +696,8 @@ def summarize(
     """
     Summarize a transcript with the chosen provider. Returns
     {"summary", "category", "answer", "sentiment_label", "sentiment_blurb",
-    "highlight", "counterpoint", "chapters", "key_points", "glossary"}.
+    "highlight", "counterpoint", "chapters", "key_points", "glossary",
+    "comment_tally"}.
     The optional fields are None/[] unless their inputs were provided.
     Raises SummarizerError on failure.
     """
@@ -639,6 +723,7 @@ def summarize(
         # video would silently lose the SHORT view entirely and only ever
         # show LONG, with no toggle. Guarantee SHORT always has something.
         parsed["key_points"] = _synthesize_key_points(parsed["summary"])
+    parsed["comment_tally"] = tally_comment_sentiment(comments, parsed.pop("comment_sentiments", {}))
     return parsed
 
 

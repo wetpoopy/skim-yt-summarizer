@@ -71,6 +71,10 @@ class Summary(Base):
     subscriber_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sentiment_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
     sentiment_blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-category comment counts and like totals, e.g.
+    # {"positive": {"count": 12, "likes": 3400}, ...}. JSON rather than six
+    # columns so the shape can grow without another migration.
+    comment_tally_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     highlight: Mapped[str | None] = mapped_column(Text, nullable=True)
     counterpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     key_points_json: Mapped[str | None] = mapped_column(Text, nullable=True)

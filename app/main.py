@@ -150,6 +150,7 @@ class SummarizeResponse(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    comment_tally: dict | None = None
     highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
@@ -180,6 +181,7 @@ class HistoryItem(BaseModel):
     subscriber_count: int | None = None
     sentiment_label: str | None = None
     sentiment_blurb: str | None = None
+    comment_tally: dict | None = None
     highlight: str | None = None
     counterpoint: str | None = None
     title_answer: str | None = None
@@ -240,6 +242,7 @@ def _summary_to_response(r: Summary, remaining: int | None = None) -> SummarizeR
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        comment_tally=json.loads(r.comment_tally_json) if r.comment_tally_json else None,
         highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
@@ -329,6 +332,7 @@ def _summarize_and_save(
             subscriber_count=subscriber_count,
             sentiment_label=result.get("sentiment_label"),
             sentiment_blurb=result.get("sentiment_blurb"),
+            comment_tally_json=json.dumps(result["comment_tally"]) if result.get("comment_tally") else None,
             highlight=result.get("highlight"),
             counterpoint=result.get("counterpoint"),
             title_answer=result.get("answer"),
@@ -360,6 +364,7 @@ def _summarize_and_save(
         subscriber_count=subscriber_count,
         sentiment_label=result.get("sentiment_label"),
         sentiment_blurb=result.get("sentiment_blurb"),
+        comment_tally=result.get("comment_tally"),
         highlight=result.get("highlight"),
         counterpoint=result.get("counterpoint"),
         title_answer=result.get("answer"),
@@ -569,6 +574,7 @@ def _row_to_history_item(r: Summary) -> HistoryItem:
         subscriber_count=r.subscriber_count,
         sentiment_label=r.sentiment_label,
         sentiment_blurb=r.sentiment_blurb,
+        comment_tally=json.loads(r.comment_tally_json) if r.comment_tally_json else None,
         highlight=r.highlight,
         counterpoint=r.counterpoint,
         title_answer=r.title_answer,
