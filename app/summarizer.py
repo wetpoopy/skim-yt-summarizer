@@ -342,16 +342,26 @@ def build_prompt(
         header_lines.append(f"ANSWER: <the single most useful thing to know from this video. {answer_rules}>")
 
     if title:
+        # The one test is MISREPRESENTATION — a gap between what the title
+        # claims and what the transcript delivers. Explicitly not a test of
+        # how informative the title is: an earlier version also caught
+        # "vague" titles, which renamed things like "Me at the zoo" that
+        # are perfectly accurate, just terse.
         header_lines.append(
-            f'TRUE_TITLE: <judge whether the title "{title}" honestly represents what the '
-            "video actually delivers. If it does — even loosely — write NONE. Only when it "
-            "genuinely misleads (promises something never delivered, withholds the answer it "
-            "advertises, wildly overstates the scale/result, or is vague clickbait that says "
-            "nothing about the content) write a replacement title of 4-12 words that states "
-            "plainly what the video actually is. No hype, no punctuation tricks, no question "
-            "marks, no ALL CAPS — the title the video would have if it weren't optimizing for "
-            "clicks. Be conservative: a merely punchy or enthusiastic title is NOT misleading, "
-            "and most titles should get NONE.>"
+            f'TRUE_TITLE: <compare the title "{title}" against what the transcript actually '
+            "delivers. Write a replacement ONLY if a viewer would feel MISLED after watching — "
+            "that is, the title claims something the video does not deliver: it promises a "
+            "reveal/answer/method the video never gives; states a result, number, or scale the "
+            "content doesn't support; is mostly about a different subject than advertised; or "
+            "asks a question it never answers. "
+            "In EVERY other case write NONE. Specifically, these are NOT misleading and must "
+            "get NONE: a title that is vague, terse, plain, or uninformative but accurate; a "
+            "punchy, enthusiastic, or dramatic title whose claim the video does back up; a "
+            "title that undersells the content; unusual capitalization or styling. Being "
+            "unhelpful is not the same as being dishonest — only dishonesty gets renamed, and "
+            "the large majority of titles should get NONE. "
+            "When you do replace it: 4-12 words stating plainly what the video actually is. "
+            "No hype, no question marks, no ALL CAPS.>"
         )
 
     has_declared_chapters = _looks_like_it_has_timestamps(description, comments)
