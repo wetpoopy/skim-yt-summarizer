@@ -3090,6 +3090,13 @@
     return (base.slice(0, 100) || videoId || 'Untitled');
   }
 
+  // Characters Obsidian treats specially inside [[...]] — a stray pipe
+  // would silently turn the rest of the term into a display alias, and
+  // brackets/hash/caret break the link outright.
+  function wikiSafe(term) {
+    return String(term || '').replace(/[[\]|#^]/g, '').trim() || 'Untitled';
+  }
+
   function yamlEscape(s) {
     return '"' + String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   }
@@ -3158,7 +3165,10 @@
       lines.push('## Glossary');
       lines.push('');
       for (const g of item.glossary) {
-        lines.push(`- **${g.term}** — ${g.definition}`);
+        // Wikilinks, so every video mentioning a term links to the same
+        // node and Obsidian's graph shows which concepts cluster across
+        // the library — the thing a plain-text export can't give you.
+        lines.push(`- [[${wikiSafe(g.term)}]] — ${g.definition}`);
       }
       lines.push('');
     }
@@ -3277,7 +3287,18 @@
     // obsidian:// scheme and can't be avoided from a web page, but this
     // at least means you land back where you were instead of staring at
     // a freshly-opened note you didn't ask to read.
-    const base = `obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(filePath)}&silent=true`;
+    //
+    // x-success is the x-callback-url convention for "come back here when
+    // you're done". Obsidian honours it on some versions and ignores it on
+    // others — it's a harmless unknown query param either way, so it costs
+    // nothing to ask. When it does fire we land back on the Library with
+    // ?from=obsidian and confirm the save. When it doesn't, iOS still shows
+    // its own back-chip to return in one tap.
+    const returnUrl = `${window.location.origin}/?from=obsidian`;
+    const base = `obsidian://new?vault=${encodeURIComponent(vault)}`
+      + `&file=${encodeURIComponent(filePath)}`
+      + `&silent=true`
+      + `&x-success=${encodeURIComponent(returnUrl)}`;
 
     // Snapshot where the user is so returning from Obsidian doesn't dump
     // them at the top of a collapsed list — the app switch can cause the
@@ -4793,6 +4814,20 @@
       else if (lastView === 'queue') showQueueView();
       else showHistoryView();
     }
+
+    // Landed back here from Obsidian's x-success callback, which means the
+    // note was actually written — worth confirming, since the hand-off is
+    // otherwise silent. Strip the marker so a later refresh doesn't
+    // re-announce a save that already happened.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('from') === 'obsidian') {
+        showToast('Saved to Obsidian');
+        params.delete('from');
+        const qs = params.toString();
+        history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+      }
+    } catch { /* URL parsing is best-effort; never block boot on it */ }
   })();
 </script>
 
