@@ -718,6 +718,18 @@ QUESTIONS = [
         "options": [("definitely", "Definitely"), ("mostly", "Mostly"), ("not_really", "Not really"), ("no", "No")],
     },
     {
+        # The core question for this product: you summarized it *instead*
+        # of watching, so the useful signal is whether the summary was
+        # enough or whether it earned the full watch.
+        "key": "watch_plan",
+        "prompt": "Still going to watch it?",
+        "options": [
+            ("will_watch", "Yes — worth watching"),
+            ("maybe", "Maybe later"),
+            ("summary_enough", "No — summary covered it"),
+        ],
+    },
+    {
         "key": "novelty",
         "prompt": "How much was new to you?",
         "options": [("all_new", "All new"), ("some_new", "Some new"), ("knew_most", "Knew most")],
