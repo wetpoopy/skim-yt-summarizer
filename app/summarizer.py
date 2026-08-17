@@ -154,7 +154,12 @@ _API_TITLE_RE = re.compile(r"\bapi\b", re.IGNORECASE)
 MAX_CATEGORY_LEN = 255
 
 
-def normalize_category(raw_category: str, title: str | None = None, extra_text: str = "") -> str:
+def normalize_category(
+    raw_category: str,
+    title: str | None = None,
+    extra_text: str = "",
+    user_categories: list[str] | None = None,
+) -> str:
     """
     A deterministic safety net on top of the CATEGORY prompt instructions,
     not a replacement for them: drops any label the model invented outside
@@ -166,7 +171,12 @@ def normalize_category(raw_category: str, title: str | None = None, extra_text: 
     so (API outranks Agents when both are in the title), then 'Runescape'
     if OSRS-specific terms show up anywhere — always the primary, full stop.
     """
+    # The user's own labels are accepted alongside the built-ins, and win a
+    # case collision so their spelling is what gets stored.
+    user_categories = [c.strip() for c in (user_categories or []) if c and c.strip()]
     valid = {c.lower(): c for c in CATEGORIES}
+    valid.update({c.lower(): c for c in user_categories})
+
     cats = []
     for part in raw_category.split(","):
         canonical = valid.get(part.strip().lower())
@@ -174,6 +184,15 @@ def normalize_category(raw_category: str, title: str | None = None, extra_text: 
             cats.append(canonical)
     if not cats:
         cats = ["Other"]
+
+    # Promote one of the user's own labels to primary if the model picked any
+    # of them. They asked to own the top level, so a custom label outranks a
+    # built-in that happens to have been listed first.
+    if user_categories:
+        owned = {c.lower() for c in user_categories}
+        mine = [c for c in cats if c.lower() in owned]
+        if mine:
+            cats = mine + [c for c in cats if c.lower() not in owned]
 
     title_lower = (title or "").lower()
     if "agent" in title_lower:
@@ -294,12 +313,29 @@ def build_prompt(
     description: str | None = None,
     transcript_segments: list[dict] | None = None,
     known_tags: list[str] | None = None,
+    user_categories: list[str] | None = None,
 ) -> str:
     category_list = ", ".join(CATEGORIES)
     structure = _structure_instructions(length, format)
 
+    # The user's own top-level categories LAYER OVER the built-ins rather
+    # than replacing them: prefer theirs for the primary label, fall back to
+    # the standard vocabulary when none of theirs genuinely fits. That keeps
+    # their shelf labels stable without leaving unusual videos uncategorised.
+    user_categories = [c.strip() for c in (user_categories or []) if c and c.strip()]
+    own_rule = ""
+    if user_categories:
+        own_rule = (
+            "IMPORTANT — these are the user's OWN top-level categories and take priority: "
+            f"{', '.join(user_categories)}. If any one of them genuinely fits this video, it MUST "
+            "be the FIRST label you list. Only fall back to the general list below for the primary "
+            "label when none of the user's categories is a reasonable fit. You may still add "
+            "general labels after theirs. Do not invent variations on the user's labels — use them "
+            "verbatim or not at all. "
+        )
+
     header_lines = [
-        f"CATEGORY: <pick EVERY label from this list that genuinely applies: {category_list}. "
+        f"CATEGORY: <{own_rule}pick EVERY label from this list that genuinely applies: {category_list}. "
         "Most videos fit 1-2 labels, occasionally 3 — list only ones that are truly relevant, "
         "MOST-SPECIFIC FIRST, separated by ', '. The first label you list becomes this video's "
         "primary category, so ordering matters: 'Runescape' always goes first when it applies — "
@@ -762,6 +798,7 @@ def summarize(
     provider: str = "anthropic",
     transcript_segments: list[dict] | None = None,
     known_tags: list[str] | None = None,
+    user_categories: list[str] | None = None,
 ) -> dict:
     """
     Summarize a transcript with the chosen provider. Returns
@@ -778,7 +815,7 @@ def summarize(
     prompt = build_prompt(
         truncated, length=length, format=format, comments=comments,
         title=title, description=description, transcript_segments=transcript_segments,
-        known_tags=known_tags,
+        known_tags=known_tags, user_categories=user_categories,
     )
 
     raw = _call_provider(provider, prompt, client=client)

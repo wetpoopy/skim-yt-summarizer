@@ -311,6 +311,7 @@ def _summarize_and_save(
         provider=provider,
         transcript_segments=transcript_data.get("segments"),
         known_tags=_known_tags_for(db, user),
+        user_categories=_user_categories(user),
     )
 
     chapters = result.get("chapters") or []
@@ -322,6 +323,7 @@ def _summarize_and_save(
         result["category"],
         title=metadata.get("title"),
         extra_text=f"{result.get('summary', '')} {glossary_text}",
+        user_categories=_user_categories(user),
     )
 
     saved = False
@@ -813,6 +815,71 @@ def list_tags(user: User = Depends(require_user), db: Session = Depends(get_db))
         {"tag": tag, "count": count}
         for tag, count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower()))
     ]
+
+
+# The user's own top-level categories. Capped and length-limited because they
+# go straight into the prompt and into a 255-char column.
+MAX_USER_CATEGORIES = 24
+MAX_USER_CATEGORY_LEN = 40
+
+
+def _user_categories(user: User | None) -> list[str]:
+    if user is None or not user.custom_categories_json:
+        return []
+    try:
+        values = json.loads(user.custom_categories_json)
+    except (ValueError, TypeError):
+        return []
+    return [v for v in values if isinstance(v, str) and v.strip()]
+
+
+class CategoriesUpdate(BaseModel):
+    categories: list[str]
+
+
+@app.get("/categories")
+def get_categories(user: User = Depends(require_user)):
+    """
+    The user's own top-level categories plus the built-in vocabulary they
+    layer over, so the UI can show both without hardcoding the list.
+    """
+    from app.summarizer import CATEGORIES
+
+    return {"categories": _user_categories(user), "builtin": list(CATEGORIES)}
+
+
+@app.put("/categories")
+def put_categories(
+    body: CategoriesUpdate,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in body.categories:
+        name = " ".join((raw or "").split())          # collapse whitespace
+        if not name or name.lower() in seen:
+            continue
+        if len(name) > MAX_USER_CATEGORY_LEN:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{name[:20]}…' is too long (max {MAX_USER_CATEGORY_LEN} characters).",
+            )
+        if "," in name:
+            # category is stored as a comma-joined list, so a comma inside a
+            # single label would split it into two on the way back out.
+            raise HTTPException(status_code=422, detail="Category names can't contain commas.")
+        cleaned.append(name)
+        seen.add(name.lower())
+
+    if len(cleaned) > MAX_USER_CATEGORIES:
+        raise HTTPException(
+            status_code=422, detail=f"At most {MAX_USER_CATEGORIES} categories."
+        )
+
+    user.custom_categories_json = json.dumps(cleaned) if cleaned else None
+    db.commit()
+    return {"categories": cleaned}
 
 
 def _known_tags_for(db: Session, user: User | None, limit: int = 60) -> list[str]:

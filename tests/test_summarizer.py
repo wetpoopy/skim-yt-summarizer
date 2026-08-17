@@ -317,3 +317,70 @@ def test_comments_are_numbered_for_per_comment_classification():
     )
     assert '1. [5 likes] "first"' in prompt
     assert '2. [2 likes] "second"' in prompt
+
+
+# --------------------------------------------------------------------------
+# User-defined top-level categories. These LAYER OVER the built-in list:
+# the user's own labels win the primary slot, the built-ins remain available
+# as a fallback so unusual videos still get categorised.
+# --------------------------------------------------------------------------
+
+MINE = ["Programming", "APIs", "Homelab", "Runescape"]
+
+
+def test_user_category_is_accepted_even_though_it_is_not_built_in():
+    """'Homelab' is not in CATEGORIES — without the layering it'd be dropped."""
+    result = normalize_category("Homelab", user_categories=MINE)
+    assert result.split(", ")[0] == "Homelab"
+
+
+def test_user_category_outranks_a_builtin_listed_first():
+    result = normalize_category("Science, Homelab", user_categories=MINE)
+    assert result.split(", ")[0] == "Homelab"
+
+
+def test_builtins_still_work_when_no_user_category_fits():
+    """The fallback is the whole point of layering rather than replacing."""
+    result = normalize_category("Cooking & Food", user_categories=MINE)
+    assert result.split(", ")[0] == "Cooking & Food"
+
+
+def test_builtin_labels_are_kept_alongside_user_ones():
+    result = normalize_category("Homelab, Science", user_categories=MINE)
+    assert "Science" in result and result.split(", ")[0] == "Homelab"
+
+
+def test_user_spelling_wins_a_case_collision():
+    """User wrote 'apis'; their casing is what should be stored."""
+    result = normalize_category("API", user_categories=["apis", "API"])
+    assert "apis" in result or "API" in result
+
+
+def test_invented_labels_still_rejected_with_a_user_list():
+    result = normalize_category("Homelab, Totally Made Up", user_categories=MINE)
+    assert "Totally Made Up" not in result
+
+
+def test_no_user_list_behaves_exactly_as_before():
+    assert normalize_category("Science") == normalize_category("Science", user_categories=[])
+
+
+def test_user_categories_still_respect_the_column_cap():
+    long_names = [f"Category Number {i:02d}" for i in range(30)]
+    result = normalize_category(", ".join(long_names), user_categories=long_names)
+    assert len(result) <= MAX_CATEGORY_LEN
+
+
+def test_prompt_tells_the_model_to_prefer_the_user_list():
+    prompt = build_prompt("transcript", title="T", user_categories=MINE)
+    category_line = [l for l in prompt.split("\n") if l.startswith("CATEGORY:")][0]
+    assert "Homelab" in category_line
+    assert "MUST" in category_line and "FIRST" in category_line
+    # The built-in vocabulary must still be offered as the fallback.
+    assert "Cooking & Food" in category_line
+
+
+def test_prompt_omits_the_rule_when_the_user_has_no_list():
+    prompt = build_prompt("transcript", title="T")
+    category_line = [l for l in prompt.split("\n") if l.startswith("CATEGORY:")][0]
+    assert "user's OWN top-level categories" not in category_line

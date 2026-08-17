@@ -1626,6 +1626,13 @@
 
   .confirm-input:focus { border-color: var(--danger); }
 
+  textarea.confirm-input {
+    resize: vertical;
+    min-height: 96px;
+    line-height: 1.5;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
   .danger-btn {
     background: transparent;
     border: 1px solid rgba(229, 72, 77, 0.4);
@@ -2262,6 +2269,18 @@
           <div class="action-row-desc mono">For Shortcuts, scripts, etc.</div>
         </div>
         <button class="link-btn mono" id="openTokensBtn">MANAGE</button>
+      </div>
+
+      <div class="action-row action-row-stack">
+        <div>
+          <div class="action-row-title">Your categories</div>
+          <div class="action-row-desc mono">Your own top-level labels. One per line — these win the
+            primary slot, and the built-in list is still used as a fallback when none of yours fits.</div>
+        </div>
+        <textarea class="confirm-input mono" id="userCategories" rows="6"
+                  placeholder="Programming&#10;APIs&#10;Homelab&#10;Runescape"></textarea>
+        <div class="action-row-status mono" id="categoriesStatus"></div>
+        <button class="link-btn mono" id="saveCategoriesBtn">SAVE CATEGORIES</button>
       </div>
 
       <div class="action-row">
@@ -3734,6 +3753,7 @@
       profileEmail.value = currentUser.email || '';
     }
     renderObsidianCurrent();
+    loadUserCategories();
     actionsModal.classList.remove('hidden');
     loadPreferences();
   }
@@ -3750,6 +3770,46 @@
   openTokensBtn.addEventListener('click', () => {
     closeActionsModal();
     openTokenModal();
+  });
+
+  // ---------- your categories ----------
+  const userCategoriesInput = document.getElementById('userCategories');
+  const categoriesStatus = document.getElementById('categoriesStatus');
+  const saveCategoriesBtn = document.getElementById('saveCategoriesBtn');
+
+  async function loadUserCategories() {
+    try {
+      const res = await fetch('/categories');
+      if (!res.ok) return;
+      const body = await res.json();
+      userCategoriesInput.value = (body.categories || []).join('\n');
+    } catch { /* leave whatever's typed alone */ }
+  }
+
+  saveCategoriesBtn.addEventListener('click', async () => {
+    const categories = userCategoriesInput.value
+      .split('\n').map(l => l.trim()).filter(Boolean);
+    saveCategoriesBtn.disabled = true;
+    categoriesStatus.textContent = '';
+    try {
+      const res = await fetch('/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail || 'Could not save.');
+      // Echo back what the server actually stored — it normalises
+      // whitespace and drops duplicates, so the box should match reality.
+      userCategoriesInput.value = (body.categories || []).join('\n');
+      categoriesStatus.textContent = body.categories.length
+        ? `Saved ${body.categories.length} categor${body.categories.length === 1 ? 'y' : 'ies'} — applies to new summaries.`
+        : 'Cleared — back to the built-in list only.';
+    } catch (e) {
+      categoriesStatus.textContent = e.message || 'Could not save.';
+    } finally {
+      saveCategoriesBtn.disabled = false;
+    }
   });
 
   document.getElementById('openObsidianBtn').addEventListener('click', () => {

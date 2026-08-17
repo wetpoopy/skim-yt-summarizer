@@ -306,3 +306,65 @@ def test_every_method_the_api_uses_is_allowed_in_preflight(client, method):
         },
     )
     assert method in res.headers.get("access-control-allow-methods", "")
+
+
+# --------------------------------------------------------------------------
+# user-defined top-level categories
+# --------------------------------------------------------------------------
+
+def test_categories_start_empty_and_expose_the_builtins(signed_in):
+    client, _ = signed_in
+    body = client.get("/categories").json()
+    assert body["categories"] == []
+    assert "Software Development" in body["builtin"]
+
+
+def test_categories_round_trip(signed_in):
+    client, _ = signed_in
+    mine = ["Programming", "APIs", "Homelab", "Runescape"]
+    assert client.put("/categories", json={"categories": mine}).json()["categories"] == mine
+    assert client.get("/categories").json()["categories"] == mine
+
+
+def test_categories_are_whitespace_normalised_and_deduped(signed_in):
+    client, _ = signed_in
+    res = client.put("/categories", json={"categories": ["  Homelab  ", "Home   lab", "homelab"]})
+    assert res.json()["categories"] == ["Homelab", "Home lab"]
+
+
+def test_commas_are_rejected(signed_in):
+    """category is stored comma-joined, so a comma inside one label would
+    split it into two on the way back out."""
+    client, _ = signed_in
+    assert client.put("/categories", json={"categories": ["Tech, Stuff"]}).status_code == 422
+
+
+def test_overlong_category_rejected(signed_in):
+    client, _ = signed_in
+    assert client.put("/categories", json={"categories": ["x" * 100]}).status_code == 422
+
+
+def test_too_many_categories_rejected(signed_in):
+    client, _ = signed_in
+    res = client.put("/categories", json={"categories": [f"Cat{i}" for i in range(50)]})
+    assert res.status_code == 422
+
+
+def test_categories_can_be_cleared(signed_in):
+    client, _ = signed_in
+    client.put("/categories", json={"categories": ["Homelab"]})
+    assert client.put("/categories", json={"categories": []}).json()["categories"] == []
+    assert client.get("/categories").json()["categories"] == []
+
+
+def test_categories_are_per_user(client):
+    client.post("/auth/signup", json={"email": "one@example.com", "password": "CorrectHorse9!", "full_name": "One"})
+    client.put("/categories", json={"categories": ["Homelab"]})
+    client.post("/auth/logout")
+    client.post("/auth/signup", json={"email": "two@example.com", "password": "CorrectHorse9!", "full_name": "Two"})
+    assert client.get("/categories").json()["categories"] == []
+
+
+def test_categories_require_auth(client):
+    assert client.get("/categories").status_code in (401, 403)
+    assert client.put("/categories", json={"categories": []}).status_code in (401, 403)

@@ -25,6 +25,12 @@ class User(Base):
     summary_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ai_provider: Mapped[str | None] = mapped_column(String(16), nullable=True)
     digest_email_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # The user's own top-level categories, as a JSON list. These LAYER OVER
+    # the built-in vocabulary in summarizer.CATEGORIES rather than replacing
+    # it: the model prefers one of these for the primary label, and falls
+    # back to the built-ins when none genuinely fits. NULL means "no custom
+    # list yet", which behaves exactly as before.
+    custom_categories_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     summaries: Mapped[list["Summary"]] = relationship(back_populates="user")
     api_tokens: Mapped[list["ApiToken"]] = relationship(back_populates="user")
