@@ -2404,7 +2404,6 @@
   const timelineFill = document.querySelector('.timeline .fill');
   const timelinePlayhead = document.querySelector('.timeline .playhead');
   const result = document.getElementById('result');
-  const summaryText = document.getElementById('summaryText');
   const videoId = document.getElementById('videoId');
   const resultTitle = document.getElementById('resultTitle');
   const resultVideoDetails = document.getElementById('resultVideoDetails');
@@ -2420,11 +2419,12 @@
   const saveInsightsBtn = document.getElementById('saveInsightsBtn');
   const saveInsightsStatus = document.getElementById('saveInsightsStatus');
   let lastSummarizedUrl = null;
+  // The prose summary isn't rendered anywhere anymore, so COPY reads it
+  // from here instead of scraping it back out of the DOM.
+  let lastSummaryText = '';
   const titleAnswer = document.getElementById('titleAnswer');
   const alreadySummarizedBanner = document.getElementById('alreadySummarizedBanner');
   const viewToggle = document.getElementById('viewToggle');
-  const shortViewBtn = document.getElementById('shortViewBtn');
-  const longViewBtn = document.getElementById('longViewBtn');
   const keyPointsList = document.getElementById('keyPointsList');
   const chaptersContainer = document.getElementById('chaptersContainer');
   const errorBox = document.getElementById('errorBox');
@@ -4719,7 +4719,7 @@
       resultChannelDetails.innerHTML = channelDetailsHtml(data);
       categoryPills.innerHTML = categoryPillsHtml(data.category);
       titleAnswer.textContent = data.title_answer || '';
-      summaryText.innerHTML = longSummaryHtml(data.summary, data.glossary);
+      lastSummaryText = data.summary || '';
       if (data.key_points && data.key_points.length > 0) {
         keyPointsList.innerHTML = keyPointsHtml(data.key_points, data.glossary);
         viewToggle.classList.remove('hidden');
@@ -4790,7 +4790,10 @@
   });
 
   copyBtn.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(summaryText.textContent);
+    // The prose summary is no longer rendered (SHORT bullets replaced it),
+    // so copy from the last response rather than from the DOM.
+    if (!lastSummaryText) return;
+    await navigator.clipboard.writeText(lastSummaryText);
     copyBtn.textContent = 'COPIED';
     setTimeout(() => (copyBtn.textContent = 'COPY'), 1500);
   });
