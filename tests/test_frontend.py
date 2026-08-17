@@ -1,8 +1,8 @@
 """
-Guardrails on app/static/index.html.
+Guardrails on the frontend (index.html / styles.css / app.js).
 
-The frontend is one ~4,800-line file with inline JS and no build step, so
-there's no compiler or bundler to catch anything. These are deliberately
+There's no build step, bundler, or type checker behind any of it, so
+nothing else catches a syntax error or a stale DOM reference. These are deliberately
 NOT tests of appearance — no assertions about colours, copy, or markup,
 because those break on every cosmetic change and get ignored.
 
@@ -20,7 +20,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-INDEX = Path(__file__).resolve().parents[1] / "app" / "static" / "index.html"
+STATIC = Path(__file__).resolve().parents[1] / "app" / "static"
+INDEX = STATIC / "index.html"
+STYLES = STATIC / "styles.css"
+APP_JS = STATIC / "app.js"
 
 
 def _strip_comments(js: str) -> str:
@@ -36,7 +39,7 @@ def _strip_comments(js: str) -> str:
 # --------------------------------------------------------------------------
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
-def test_inline_javascript_parses(frontend_source, tmp_path):
+def test_frontend_javascript_parses(frontend_source, tmp_path):
     # A real file rather than stdin: `node --check -` waits on stdin and hangs.
     script = tmp_path / "inline.js"
     script.write_text(f"(function(){{{frontend_source}\n}})();", encoding="utf-8")
@@ -91,7 +94,7 @@ def test_those_tap_targets_remain_keyboard_accessible(frontend_source):
 # --------------------------------------------------------------------------
 
 def test_inputs_are_at_least_16px():
-    css = INDEX.read_text(encoding="utf-8")
+    css = STYLES.read_text(encoding="utf-8")
     assert re.search(r"input,\s*textarea,\s*select\s*\{[^}]*font-size:\s*16px", css), (
         "the global 16px input rule prevents iOS auto-zoom — do not lower it"
     )
@@ -129,12 +132,9 @@ def test_glossary_linkify_has_a_fallback(frontend_source):
 # --------------------------------------------------------------------------
 
 def _static_markup() -> str:
-    """index.html with the <script> block removed.
-
-    Ids inside the script are either template literals (`id="${item.id}"`)
-    or strings assigned via innerHTML, so counting them as declared markup
-    produces false positives in both directions.
-    """
+    """The HTML markup. Now that JS lives in app.js, index.html is markup
+    only — but keep stripping any <script> block so an inline one added
+    later can't reintroduce false positives."""
     html = INDEX.read_text(encoding="utf-8")
     return re.sub(r"<script>[\s\S]*?</script>", "", html)
 

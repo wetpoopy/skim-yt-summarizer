@@ -128,12 +128,7 @@ def make_summary(app_env):
 
 @pytest.fixture
 def frontend_source():
-    """The inline <script> body from index.html, for JS-level assertions."""
-    html = (Path(__file__).resolve().parents[1] / "app" / "static" / "index.html").read_text(
+    """The frontend JavaScript, for JS-level assertions."""
+    return (Path(__file__).resolve().parents[1] / "app" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
-    import re
-
-    match = re.search(r"<script>([\s\S]*)</script>", html)
-    assert match, "no inline <script> block found in index.html"
-    return match.group(1)

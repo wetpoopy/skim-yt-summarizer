@@ -1,0 +1,1961 @@
+  :root {
+    --ink: #0B0E14;
+    --ink-raised: #10141C;
+    --paper: #EDEBE3;
+    --slate: #7C8699;
+    --line: #1E2430;
+    --amber: #FFB020;
+    --amber-dim: #664B14;
+    --danger: #E5484D;
+    --radius: 10px;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* iOS Safari force-zooms the page when a focused text input's font-size
+     is under 16px — every input/select on this page was smaller than
+     that. Once zoomed (e.g. tapping the URL field), a big layout change
+     right after (the result card appearing) can leave the page stuck
+     zoomed in, which reads as "everything is huge" / "can't shrink it
+     back down" regardless of any other per-element sizing. This is the
+     standard, universal fix. */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Mobile Safari/Chrome paint a translucent gray-blue "tap highlight"
+     rectangle over any tapped button/link by default — on this dark
+     theme it reads as an overpowering flash that obscures the text
+     underneath it (e.g. tapping a key-point bullet, or SHORT/LONG). */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* viewport-fit=cover + apple-mobile-web-app-capable means content can
+       render under the notch/status bar (especially added-to-homescreen)
+       unless the safe-area inset is added on top of the normal padding. */
+    padding: calc(32px + env(safe-area-inset-top)) 20px 60px;
+    overflow-wrap: anywhere;
+  }
+
+  .mono {
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  a { color: var(--amber); }
+
+  /* ---------- header ---------- */
+  header {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .logo {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 14px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  .refresh-btn:hover { background: var(--line); color: var(--paper); }
+
+  .refresh-btn.spinning {
+    color: var(--amber);
+    border-color: var(--amber-dim);
+    animation: refresh-spin 0.6s linear infinite;
+  }
+
+  @keyframes refresh-spin { to { transform: rotate(360deg); } }
+
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    /* A flex item's default min-width:auto refuses to shrink below its
+       content's intrinsic width — without this, the nav row inside
+       (.auth-area) never actually got squeezed, so its own overflow-x
+       scroll never had anything to do and ACTIONS just got clipped at
+       the edge of the viewport instead. */
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .auth-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    /* When there isn't room for every nav button on one line, scroll
+       instead of silently clipping — losing space here used to cut
+       ACTIONS off the right edge entirely with no way to reach it. */
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .auth-area::-webkit-scrollbar { display: none; }
+
+  .auth-area button, .link-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--paper);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .auth-area button:hover, .link-btn:hover { background: var(--line); }
+
+  .auth-area .user-email { color: var(--slate); }
+
+  .hidden { display: none !important; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(24px + env(safe-area-inset-bottom));
+    transform: translate(-50%, 12px);
+    max-width: min(420px, calc(100vw - 32px));
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 50;
+    text-align: center;
+  }
+
+  .toast.visible { opacity: 1; transform: translate(-50%, 0); }
+
+  .toast.toast-error { border-color: var(--danger); color: var(--danger); }
+
+  /* ---------- history view ---------- */
+  #historyView {
+    width: 100%;
+    max-width: 640px;
+  }
+
+  .history-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .history-header h2 {
+    font-size: 22px;
+    margin: 0;
+  }
+
+  .history-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .history-tab {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .history-tab:hover { background: var(--line); color: var(--paper); }
+
+  .history-tab.active {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .history-filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .history-filters input, .history-filters select {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+  }
+
+  .search-wrap {
+    position: relative;
+    flex: 1 1 100%;
+    min-width: 0;
+    display: flex;
+  }
+
+  .search-wrap input {
+    width: 100%;
+    /* Room for the clear button so long queries don't run under it. */
+    padding-right: 38px !important;
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--slate);
+    font-size: 13px;
+    line-height: 1;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .search-clear:hover { background: var(--line); color: var(--paper); }
+
+  .history-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+
+  .queue-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 12px;
+  }
+
+  .queue-card.queue-failed { border-color: rgba(229, 72, 77, 0.35); }
+
+  .queue-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-weight: 600;
+  }
+
+  .queue-status-line {
+    font-size: 12px;
+    color: var(--slate);
+    margin-top: 6px;
+  }
+
+  .queue-failed .queue-status-line { color: var(--danger); }
+
+  .queue-time {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 4px;
+  }
+
+  .queue-dismiss-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .queue-dismiss-btn:hover { background: var(--line); color: var(--paper); }
+
+  .queue-bar {
+    display: block;
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .queue-bar-fill {
+    display: block;
+    height: 100%;
+    background: var(--amber);
+    border-radius: 3px;
+    /* Long transition because updates arrive on the 5s poll — this keeps
+       the bar creeping rather than jumping between phases. */
+    transition: width 1.2s ease-out;
+  }
+
+  .queue-bar-fill.stalled { background: var(--danger); }
+
+  .queue-pct {
+    font-size: 11px;
+    color: var(--slate);
+    flex-shrink: 0;
+  }
+
+  .queue-card-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .queue-card-bottom .queue-time { margin-top: 0; }
+
+  .queue-retry-btn {
+    background: transparent;
+    border: 1px solid var(--amber-dim);
+    color: var(--amber);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .queue-retry-btn:hover { background: var(--amber-dim); color: var(--paper); }
+
+  .queue-retry-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: transparent;
+    color: var(--slate);
+    border-color: var(--line);
+  }
+
+  .history-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 8px;
+  }
+
+  .original-title {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--slate);
+    line-height: 1.4;
+    margin-top: 5px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .renamed-badge {
+    display: inline-block;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    border-radius: 4px;
+    padding: 1px 5px;
+    flex-shrink: 0;
+  }
+
+  .history-card-title a, .result-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .history-card-title a:hover, .result-title a:hover {
+    text-decoration: underline;
+    text-decoration-color: var(--amber);
+  }
+
+  .detail-value a {
+    color: var(--slate);
+    text-decoration: none;
+  }
+
+  .detail-value a:hover {
+    color: var(--amber);
+    text-decoration: underline;
+  }
+
+  .history-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .history-card-time {
+    color: var(--slate);
+    font-size: 11px;
+    margin-left: auto;
+  }
+
+  .history-card-toggle {
+    background: var(--amber);
+    border: none;
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .history-card-toggle:hover { background: #FFC04D; }
+
+  .history-card-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .history-card-title-row .history-card-title { flex: 1; min-width: 0; }
+
+  .card-menu-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .card-menu-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .card-menu-btn:hover { background: var(--line); color: var(--paper); }
+
+  .card-menu {
+    position: absolute;
+    top: 34px;
+    right: 0;
+    min-width: 150px;
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px;
+    z-index: 5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .card-menu.hidden { display: none; }
+
+  .card-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--paper);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    padding: 9px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .card-menu-item:hover { background: var(--line); }
+
+  .card-menu-item.danger { color: var(--danger); }
+
+  .card-menu-item.danger:hover { background: rgba(229, 72, 77, 0.1); }
+
+  .title-answer {
+    background: rgba(255, 176, 32, 0.06);
+    border-left: 2px solid var(--amber);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    margin: 4px 0 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--paper);
+  }
+
+  .title-answer:empty { display: none; }
+
+  .chapters-list {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  .chapters-heading {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+
+  .chapters-heading::-webkit-details-marker { display: none; }
+
+  .chapters-heading::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform 0.15s ease;
+  }
+
+  details[open] > .chapters-heading::before {
+    transform: rotate(90deg);
+  }
+
+  .chapters-heading:hover { color: var(--amber); }
+
+  .chapters-list > .chapter-link:first-of-type {
+    margin-top: 8px;
+  }
+
+  .chapter-link {
+    display: grid;
+    grid-template-columns: 48px 1px 1fr;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--paper);
+    text-decoration: none;
+    padding: 4px 0;
+    align-items: baseline;
+  }
+
+  .chapter-link:hover .chapter-time { color: var(--amber); }
+
+  .chapter-time {
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--slate);
+    text-align: right;
+  }
+
+  .chapter-link:hover .chapter-time { text-decoration: underline; }
+
+  .chapter-divider {
+    align-self: stretch;
+    background: var(--line);
+  }
+
+  .history-date-heading {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--slate);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 24px 0 10px;
+  }
+
+  .history-date-heading:first-child { margin-top: 0; }
+
+  .history-card-summary {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--paper);
+    display: none;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  .history-card.expanded .history-card-summary { display: block; }
+
+  /* LONG is now built from structured elements (long-lead / key-point-row
+     blocks), not a raw pre-wrapped text dump, so no white-space override
+     is needed here — one previously was, but applying pre-wrap at this
+     level made the whitespace between template-literal elements render
+     as visible blank space throughout the card. */
+  .summary-long-content { line-height: 1.6; }
+
+  /* ---------- questions ---------- */
+  .q-row {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .q-row:last-of-type { border-bottom: none; }
+
+  .q-prompt {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--paper);
+    margin-bottom: 8px;
+  }
+
+  .q-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .q-option {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 6px 11px;
+    border-radius: 20px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .q-option:hover { border-color: var(--amber-dim); color: var(--paper); }
+
+  .q-option.selected {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .q-progress {
+    font-size: 10.5px;
+    color: var(--slate);
+    margin-top: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .questions-empty { font-size: 12px; color: var(--slate); padding: 8px 0; }
+
+  /* ---------- topic tags ---------- */
+  /* Visually quieter than category pills: categories are the shelf you
+     browse by, tags are the fine detail underneath. */
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 8px 0 4px;
+  }
+
+  .topic-tag {
+    font-size: 10px;
+    color: var(--slate);
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 2px 7px;
+    letter-spacing: 0.02em;
+  }
+
+  .history-empty {
+    color: var(--slate);
+    font-size: 13px;
+    display: none;
+  }
+
+  .history-empty.visible { display: block; }
+
+  .glossary-subtitle {
+    color: var(--slate);
+    font-size: 12.5px;
+    margin: -12px 0 20px;
+  }
+
+  .glossary-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+
+  .glossary-term {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-bottom: 6px;
+  }
+
+  .glossary-definition {
+    font-size: 14px;
+    color: var(--paper);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+
+  .glossary-example {
+    font-size: 13px;
+    color: var(--slate);
+    font-style: italic;
+    line-height: 1.5;
+    padding-left: 10px;
+    border-left: 2px solid var(--line);
+    margin-bottom: 10px;
+  }
+
+  .glossary-sources {
+    font-size: 11px;
+    color: var(--slate);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .glossary-sources a {
+    color: var(--slate);
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 3px 10px;
+  }
+
+  .glossary-sources a:hover { color: var(--amber); border-color: var(--amber-dim); }
+
+  /* Inline tappable glossary term inside a summary/key-point — looks
+     like a subtle underline, not a full button, so it doesn't compete
+     with the surrounding text. */
+  .gloss-term {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--amber-dim);
+    text-underline-offset: 2px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .gloss-popover-card {
+    max-width: 340px;
+    padding: 24px 22px 22px;
+  }
+
+  .gloss-popover-term {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--amber);
+    margin: 0 0 10px;
+    padding-right: 20px;
+  }
+
+  .gloss-popover-def {
+    font-size: 14px;
+    color: var(--paper);
+    line-height: 1.5;
+  }
+
+  .gloss-popover-example {
+    font-size: 13px;
+    color: var(--slate);
+    font-style: italic;
+    line-height: 1.5;
+    padding-left: 10px;
+    border-left: 2px solid var(--line);
+    margin-top: 10px;
+  }
+
+  .gloss-popover-example:empty { display: none; }
+
+  /* ---------- LONG view: same collapsible-bullet treatment as SHORT ---------- */
+  .long-lead {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--paper);
+    margin-bottom: 4px;
+  }
+
+  .long-block-static {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .long-block-static:last-child { border-bottom: none; }
+
+  .category-pill {
+    font-size: 10px;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    border-radius: 20px;
+    padding: 3px 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .pill-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pill-wrap:empty { display: none; }
+
+  .card-pill-row { margin-bottom: 8px; }
+
+  .sentiment-pill {
+    font-size: 10px;
+    border-radius: 20px;
+    padding: 3px 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .sentiment-pill.sentiment-positive {
+    color: #4ADE80;
+    border: 1px solid rgba(74, 222, 128, 0.35);
+  }
+
+  .sentiment-pill.sentiment-negative {
+    color: var(--danger);
+    border: 1px solid rgba(229, 72, 77, 0.35);
+  }
+
+  .sentiment-pill.sentiment-mixed {
+    color: var(--slate);
+    border: 1px solid var(--line);
+  }
+
+
+
+  /* One container for everything comment-derived, so the verdict, the
+     breakdown, and the two takes read as a single section instead of
+     four stacked boxes each with their own padding. */
+  .comments-block {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .comment-verdict {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .comment-verdict-text {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--paper);
+    flex: 1 1 200px;
+    min-width: 0;
+  }
+
+  .comment-take {
+    display: flex;
+    gap: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    margin-top: 8px;
+    color: var(--paper);
+  }
+
+  .take-sign {
+    flex-shrink: 0;
+    font-weight: 600;
+    width: 12px;
+  }
+
+  .take-up .take-sign { color: #4ADE80; }
+  .take-down .take-sign { color: var(--danger); }
+
+  .detail-note { color: var(--slate); font-size: 10px; }
+
+  /* Nested inside .comments-block now, so it drops its own chrome. */
+  .comment-tally {
+    margin-top: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+  }
+
+  .comment-tally-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--slate);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .tally-sample { text-transform: none; letter-spacing: 0; opacity: 0.7; }
+
+  .tally-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .tally-row:last-child { margin-bottom: 0; }
+
+  .tally-label {
+    font-size: 11px;
+    width: 58px;
+    flex-shrink: 0;
+  }
+
+  .tally-bar {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 6px;
+    background: var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .tally-bar-fill { display: block; height: 100%; border-radius: 3px; }
+
+  .tally-nums {
+    font-size: 11px;
+    color: var(--slate);
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .tally-positive { color: #4ADE80; }
+  .tally-negative { color: var(--danger); }
+  .tally-neutral  { color: var(--slate); }
+
+  .tally-bar-fill.tally-positive { background: #4ADE80; }
+  .tally-bar-fill.tally-negative { background: var(--danger); }
+  .tally-bar-fill.tally-neutral  { background: var(--slate); }
+
+
+
+
+
+  .save-insights-box {
+    margin-top: 20px;
+    padding: 18px 16px;
+    border: 1px solid var(--amber-dim);
+    border-radius: var(--radius);
+    background: rgba(255, 176, 32, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .save-insights-box .confirm-input:focus { border-color: var(--amber); }
+
+  .save-insights-box .link-btn {
+    background: var(--amber);
+    color: var(--ink);
+    border: none;
+    text-align: center;
+    padding: 10px 14px;
+    font-weight: 600;
+  }
+
+  .save-insights-box .link-btn:hover { background: #FFC04D; }
+
+
+
+  .view-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .view-toggle.hidden { display: none; }
+
+  .view-toggle-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+  }
+
+  .view-toggle-btn.active {
+    border-color: var(--amber-dim);
+    color: var(--amber);
+  }
+
+  .key-points-list.hidden { display: none; }
+
+  .key-point-row {
+    border-bottom: 1px solid var(--line);
+    padding: 8px 0;
+  }
+
+  .key-point-row:last-child { border-bottom: none; }
+
+  .key-point-toggle {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    background: none;
+    border: none;
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+    text-align: left;
+    white-space: normal;
+    cursor: pointer;
+    padding: 0;
+    color: var(--paper);
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px !important;
+    font-weight: 600;
+    line-height: 1.5;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .key-point-toggle span {
+    font-size: inherit;
+  }
+
+  /* The point-text span, not the arrow — a flex item's default
+     min-width:auto refuses to shrink below its content's intrinsic
+     (unwrapped) width, so without this the bullet text stayed on one
+     line and overflowed the card horizontally instead of wrapping. */
+  .key-point-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .key-point-arrow {
+    color: var(--amber);
+    flex-shrink: 0;
+    font-size: 11px;
+    transition: transform 0.15s ease;
+  }
+
+  .key-point-row.open .key-point-arrow { transform: rotate(90deg); }
+
+  .key-point-detail {
+    margin: 6px 0 0 19px;
+    font-size: 13px;
+    color: var(--slate);
+    line-height: 1.5;
+  }
+
+  .key-point-detail.hidden { display: none; }
+
+  /* ---------- auth modal ---------- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 10;
+  }
+
+  .modal-card {
+    position: relative;
+    width: 100%;
+    max-width: 380px;
+    max-height: 85vh;
+    overflow-y: auto;
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 32px 28px 28px;
+  }
+
+  .drawer-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: flex-start;
+    z-index: 10;
+  }
+
+  .drawer-panel {
+    width: 100%;
+    max-width: 320px;
+    height: 100%;
+    background: var(--ink-raised);
+    border-right: 1px solid var(--line);
+    padding: 24px 20px;
+    overflow-y: auto;
+  }
+
+  .drawer-panel h2 { margin: 0 0 16px; font-size: 18px; }
+
+  .filter-section {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .filter-section-title {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+  }
+
+  .filter-section select, .filter-section input {
+    width: 100%;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    color: var(--paper);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+  }
+
+  #clearFiltersBtn { width: 100%; text-align: center; }
+
+  .drawer-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 12px 0;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    background: none;
+    color: var(--paper);
+    font-family: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .drawer-item.active { border-bottom-color: var(--amber-dim); color: var(--amber); }
+  .drawer-count { color: var(--slate); font-size: 12px; }
+
+  .modal-card h2 {
+    margin: 0 0 20px;
+    font-size: 20px;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    background: transparent;
+    border: none;
+    color: var(--slate);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 11px;
+    color: var(--slate);
+    margin: 14px 0 6px;
+    letter-spacing: 0.04em;
+  }
+
+  #authForm input {
+    width: 100%;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 12px 14px;
+    outline: none;
+  }
+
+  #authForm input:focus { border-color: var(--amber); }
+
+  .auth-error {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 12px;
+    min-height: 0;
+  }
+
+  .auth-submit {
+    width: 100%;
+    margin-top: 18px;
+    background: var(--amber);
+    color: var(--ink);
+    border: none;
+    border-radius: var(--radius);
+    padding: 13px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+
+  .auth-submit:hover { background: #FFC04D; }
+
+  .auth-switch {
+    text-align: center;
+    font-size: 12px;
+    color: var(--slate);
+    margin: 16px 0 0;
+  }
+
+  .auth-switch a { cursor: pointer; }
+
+  /* ---------- api token modal ---------- */
+  .token-modal-card { max-width: 460px; }
+
+  .token-hint {
+    font-size: 11px;
+    color: var(--slate);
+    margin: 0 0 20px;
+    line-height: 1.5;
+  }
+
+  .new-token-box {
+    background: rgba(255, 176, 32, 0.06);
+    border: 1px solid var(--amber-dim);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 18px;
+  }
+
+  .token-value-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .token-value {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--amber);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .create-token-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .create-token-row input {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+  }
+
+  .create-token-row input:focus { border-color: var(--amber); }
+
+  .token-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .token-row:last-child { border-bottom: none; }
+
+  .token-row-meta { color: var(--slate); font-size: 11px; }
+
+  .token-revoke {
+    background: transparent;
+    border: 1px solid rgba(229, 72, 77, 0.4);
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .token-revoke:hover { background: rgba(229, 72, 77, 0.1); }
+
+  .token-empty {
+    color: var(--slate);
+    font-size: 12px;
+    display: none;
+  }
+
+  .token-empty.visible { display: block; }
+
+  /* ---------- actions modal ---------- */
+  .actions-modal-card { max-width: 460px; }
+
+  .action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .action-row:last-child { border-bottom: none; }
+
+  .action-row-stack {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .action-row-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .action-row-desc {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 3px;
+  }
+
+  .export-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .export-btn-row a { text-decoration: none; }
+
+  .danger-row .action-row-title { color: var(--danger); }
+
+  .confirm-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .preferences-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  /* ---------- batch/playlist modal ---------- */
+  .batch-modal-card { max-width: 520px; }
+
+  .batch-subtitle {
+    font-size: 12px;
+    color: var(--slate);
+    margin: -12px 0 16px;
+  }
+
+  .batch-video-list {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .batch-video-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .batch-video-row:last-child { border-bottom: none; }
+
+  .batch-video-row img {
+    width: 48px;
+    height: 27px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .batch-video-row span { flex: 1; }
+
+  .batch-cost-table {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
+  .batch-cost-item {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .batch-cost-item.selected { border-color: var(--amber); }
+
+  .batch-cost-label { color: var(--slate); margin-bottom: 4px; }
+
+  .batch-cost-value { font-family: 'IBM Plex Mono', monospace; color: var(--paper); }
+
+  .batch-actions-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .batch-actions-row .link-btn { flex: 1; text-align: center; }
+
+  .batch-progress-list {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .batch-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+
+  .batch-progress-row:last-child { border-bottom: none; }
+
+  .batch-progress-status { flex-shrink: 0; width: 90px; font-size: 11px; color: var(--slate); }
+
+  .batch-progress-row.done .batch-progress-status { color: var(--amber); }
+
+  .batch-progress-row.failed .batch-progress-status { color: var(--danger); }
+
+  .batch-progress-row.skipped { opacity: 0.5; }
+
+  .batch-progress-row.skipped .batch-progress-status { color: var(--slate); }
+
+  .batch-quota-banner {
+    background: rgba(229, 72, 77, 0.08);
+    border: 1px solid rgba(229, 72, 77, 0.3);
+    border-radius: 8px;
+    color: var(--danger);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+  }
+
+  .batch-quota-banner.hidden { display: none; }
+
+  .playlist-badge {
+    font-size: 11px;
+    color: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+
+  .already-badge {
+    font-size: 10px;
+    color: var(--slate);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    white-space: nowrap;
+  }
+
+  .already-summarized-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 176, 32, 0.08);
+    border: 1px solid var(--amber-dim);
+    border-radius: 8px;
+    color: var(--amber);
+    font-size: 12px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+  }
+
+  .already-summarized-banner:empty { display: none; }
+
+  .preferences-row select {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-size: 12px;
+    padding: 9px 10px;
+    outline: none;
+  }
+
+  .preferences-row select:focus { border-color: var(--amber); }
+
+  .digest-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--slate);
+    margin-top: 12px;
+    cursor: pointer;
+  }
+
+  .digest-toggle input { accent-color: var(--amber); width: 15px; height: 15px; cursor: pointer; }
+
+  .confirm-input {
+    flex: 1;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--paper);
+    font-size: 12px;
+    padding: 9px 12px;
+    outline: none;
+  }
+
+  .confirm-input:focus { border-color: var(--danger); }
+
+  .danger-btn {
+    background: transparent;
+    border: 1px solid rgba(229, 72, 77, 0.4);
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 0 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .danger-btn:not(:disabled):hover { background: rgba(229, 72, 77, 0.1); }
+
+  .danger-btn:disabled {
+    border-color: var(--line);
+    color: var(--slate);
+    cursor: not-allowed;
+    background: transparent;
+  }
+
+  .action-row-status {
+    font-size: 11px;
+    color: var(--slate);
+    margin-top: 8px;
+  }
+
+  /* ---------- hero ---------- */
+  /* ---------- form ---------- */
+  form {
+    width: 100%;
+    max-width: 640px;
+  }
+
+  .input-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  input[type="url"] {
+    flex: 1;
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    color: var(--paper);
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    padding: 15px 16px;
+    outline: none;
+    transition: border-color 0.15s ease;
+    min-width: 0;
+  }
+
+  input[type="url"]::placeholder { color: #4A5265; }
+
+  input[type="url"]:focus {
+    border-color: var(--amber);
+  }
+
+  input[type="url"]:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 2px;
+  }
+
+  button {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    background: var(--amber);
+    color: var(--ink);
+    border: none;
+    border-radius: var(--radius);
+    padding: 0 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+
+  button:hover { background: #FFC04D; }
+  button:active { transform: scale(0.98); }
+  button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* .key-point-toggle / .view-toggle-btn are plain <div role="button">s,
+     not real <button> elements — on iOS, real <button>s kept showing a
+     solid amber fill on tap (an active/pressed feedback baked into the
+     platform's native control rendering) that neither
+     -webkit-tap-highlight-color:transparent nor outline:none could
+     suppress, even with !important. A non-native element gets no native
+     press feedback at all, so this is the actual fix; these rules are
+     kept as extra insurance against any residual outline/tap-highlight-
+     color-driven highlighting (.gloss-term is a <span>, never a real
+     <button>, but gets the same treatment for consistency). */
+  .key-point-toggle,
+  .view-toggle-btn,
+  .gloss-term,
+  .key-point-toggle *,
+  .view-toggle-btn *,
+  .key-point-toggle:focus-visible,
+  .view-toggle-btn:focus-visible,
+  .gloss-term:focus-visible,
+  .key-point-toggle:focus,
+  .view-toggle-btn:focus,
+  .gloss-term:focus,
+  .key-point-toggle:active,
+  .view-toggle-btn:active,
+  .gloss-term:active {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* Belt and suspenders on top of the above: iOS can also show its
+     native "select this word" highlight + magnifier on a tap that lands
+     on text rather than being cleanly caught as a button press, which
+     looks identical to an unwanted highlight and neither tap-highlight-
+     color nor outline:none touches it. Killing selection/callout on
+     these tap targets removes every remaining source of a visible
+     highlight on tap — they're controls, not text meant to be selected,
+     and copying the full summary is already handled by the COPY button. */
+  .summary-view-container,
+  .summary-view-container *,
+  .history-card-summary,
+  .history-card-summary * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  button:disabled {
+    background: var(--amber-dim);
+    color: #8A7237;
+    cursor: not-allowed;
+  }
+
+  button .play-icon {
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid var(--ink);
+    flex-shrink: 0;
+  }
+
+  /* ---------- timeline (signature element) ---------- */
+  .timeline-wrap {
+    height: 0;
+    overflow: hidden;
+    transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .timeline-wrap.active { height: 54px; }
+
+  .timeline {
+    position: relative;
+    height: 4px;
+    background: var(--line);
+    border-radius: 2px;
+    margin: 22px 0 10px;
+    overflow: visible;
+  }
+
+  .timeline .playhead {
+    position: absolute;
+    top: 50%;
+    left: 0%;
+    width: 10px;
+    height: 10px;
+    margin-top: -5px;
+    margin-left: -5px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 10px var(--amber);
+    transition: left 0.4s ease-out;
+  }
+
+  .timeline .fill {
+    position: absolute;
+    top: 0; left: 0; height: 100%;
+    background: var(--amber-dim);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.4s ease-out;
+  }
+
+  .status-line {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--slate);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- result ---------- */
+  .result {
+    width: 100%;
+    max-width: 640px;
+    margin-top: 8px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+    pointer-events: none;
+  }
+
+  .result.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .result-card {
+    background: var(--ink-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 26px 26px 22px;
+  }
+
+  .result-title {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+
+  .result-title:empty { display: none; }
+
+  .video-details {
+    margin-bottom: 12px;
+  }
+
+  .video-details-toggle {
+    font-size: 11px;
+    color: var(--slate);
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .video-details-toggle::-webkit-details-marker { display: none; }
+
+  .video-details[open] .video-details-toggle { color: var(--paper); }
+
+  .video-details-body {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12.5px;
+  }
+
+  .detail-label {
+    color: var(--slate);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+
+  .detail-value {
+    color: var(--paper);
+    text-align: right;
+  }
+
+  .result-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .result-meta .video-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--slate);
+  }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--slate);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+  }
+
+  .copy-btn:hover { background: var(--line); color: var(--paper); }
+
+  .summary-text {
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--paper);
+  }
+
+  .summary-text .long-lead {
+    font-weight: 600;
+  }
+
+  /* ---------- error ---------- */
+  .error-box {
+    width: 100%;
+    max-width: 640px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: rgba(229, 72, 77, 0.08);
+    border: 1px solid rgba(229, 72, 77, 0.3);
+    border-radius: var(--radius);
+    color: #F5A3A5;
+    font-size: 14px;
+    display: none;
+  }
+
+  .error-box.visible { display: block; }
+
+  /* ---------- footer ---------- */
+  footer {
+    margin-top: auto;
+    padding-top: 56px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #3D4457;
+    text-align: center;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
+  @media (max-width: 480px) {
+    .input-row { flex-direction: column; }
+    button { padding: 15px; justify-content: center; }
+    header { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .header-right { align-items: flex-start; }
+    .history-filters { flex-direction: column; }
+    .create-token-row { flex-direction: column; }
+    .token-value-row { flex-direction: column; align-items: stretch; }
+    .export-btn-row { flex-wrap: wrap; }
+    .confirm-row { flex-direction: column; align-items: stretch; }
+    .preferences-row { flex-direction: column; align-items: stretch; }
+  }

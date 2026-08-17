@@ -1117,24 +1117,40 @@ def delete_all_history(user: User = Depends(require_user), db: Session = Depends
 _static_dir = Path(__file__).parent / "static"
 
 
-@app.get("/", include_in_schema=False)
-def serve_index():
+def _serve_revalidating(filename: str, media_type: str) -> Response:
     """
-    Explicit route (checked before the StaticFiles mount below) so the
-    app shell always revalidates instead of being cached indefinitely.
+    Serve an app-shell file that must always be revalidated.
+
     StaticFiles sends no Cache-Control header at all, which browsers —
-    especially mobile Safari for a home-screen/standalone PWA, which
-    this app is set up as — can and do treat as "cache this and don't
-    bother checking again," silently serving an old index.html (old
-    CSS/JS, since everything is inline in this one file) after a fix
-    has already shipped.
+    especially mobile Safari for a home-screen/standalone PWA, which this
+    app is set up as — and Railway's edge treat as "cache this and don't
+    bother checking again." That silently serves stale code after a fix
+    has shipped, which has cost real debugging time more than once.
+
+    This matters even more now that the CSS and JS are separate files: a
+    cached app.js against a fresh index.html is a broken app, not just an
+    outdated one.
     """
-    html = (_static_dir / "index.html").read_text(encoding="utf-8")
     return Response(
-        content=html,
-        media_type="text/html",
+        content=(_static_dir / filename).read_text(encoding="utf-8"),
+        media_type=media_type,
         headers={"Cache-Control": "no-cache, must-revalidate"},
     )
+
+
+@app.get("/", include_in_schema=False)
+def serve_index():
+    return _serve_revalidating("index.html", "text/html")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def serve_styles():
+    return _serve_revalidating("styles.css", "text/css")
+
+
+@app.get("/app.js", include_in_schema=False)
+def serve_app_js():
+    return _serve_revalidating("app.js", "application/javascript")
 
 
 # Mounted last and at "/" so it only catches requests that don't match
