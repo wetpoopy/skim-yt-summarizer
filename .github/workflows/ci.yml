@@ -1,0 +1,36 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Fail if any frontend guardrail was skipped
+        run: |
+          pytest tests/test_frontend.py -q -rs | tee /tmp/frontend.txt
+          if grep -qi "skipped" /tmp/frontend.txt; then
+            echo "::error::A frontend guardrail was skipped — it is not protecting anything."
+            exit 1
+          fi
