@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 venv/
 dev.db
+.venv-test/
+.pytest_cache/
